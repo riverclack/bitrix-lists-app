@@ -12,33 +12,31 @@
         .b24-field { margin-bottom: 15px; }
         .b24-label { font-size: 12px; color: #535c69; margin-bottom: 5px; display: block; font-weight: 600; text-transform: uppercase; }
         
-        /* Группа: Селект + Кнопка */
-        .input-group { display: flex; gap: 10px; align-items: center; }
-        
         .b24-select {
-            flex-grow: 1; /* Растягиваем селект */
-            display: block; height: 40px; padding: 0 10px;
+            display: block; width: 100%; height: 40px; padding: 0 10px;
             font-size: 15px; color: #333; background: #fff;
             border: 1px solid #c6cdd3; border-radius: 4px;
             box-sizing: border-box; outline: none;
+            margin-bottom: 5px;
         }
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
 
+        /* Контейнер для списка файлов */
+        .file-list {
+            display: flex; flex-wrap: wrap; gap: 8px; min-height: 0;
+        }
+        
         /* Кнопка файла */
         .btn-file {
-            display: inline-flex; align-items: center; justify-content: center;
-            height: 40px; padding: 0 15px;
-            background: #fff; border: 1px solid #c6cdd3; border-radius: 4px;
-            color: #535c69; text-decoration: none; font-size: 13px; font-weight: 600;
-            white-space: nowrap; transition: 0.2s; cursor: pointer;
+            display: inline-flex; align-items: center;
+            padding: 6px 12px;
+            background: #f0f2f5; border: 1px solid #c6cdd3; border-radius: 15px;
+            color: #535c69; text-decoration: none; font-size: 12px; font-weight: 600;
+            transition: 0.2s; cursor: pointer;
         }
-        .btn-file:hover { background: #f0f2f5; border-color: #b0b8c0; }
-        .btn-file.disabled { 
-            opacity: 0.5; pointer-events: none; background: #f9fafb; border-color: #eee; color: #ccc; 
-        }
-        .btn-file span { margin-left: 5px; }
+        .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
+        .btn-file span { margin-left: 4px; }
 
-        /* Кнопки установки */
         .btn-install {
             display: inline-block; padding: 12px 24px; background: #9dcf00; 
             color: #fff; text-decoration: none; border-radius: 4px; 
@@ -68,26 +66,20 @@
     <div id="main-screen">
         <div class="b24-field">
             <label class="b24-label">Договор с клиентом</label>
-            <div class="input-group">
-                <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
-                <a id="btn-dogovor" class="btn-file disabled" target="_blank">📄 <span>Файл</span></a>
-            </div>
+            <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
+            <div id="files-dogovor" class="file-list"></div>
         </div>
 
         <div class="b24-field">
             <label class="b24-label">Спецификация</label>
-            <div class="input-group">
-                <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
-                <a id="btn-spec" class="btn-file disabled" target="_blank">📄 <span>Файл</span></a>
-            </div>
+            <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
+            <div id="files-spec" class="file-list"></div>
         </div>
 
         <div class="b24-field">
             <label class="b24-label">Заказ Клиента</label>
-            <div class="input-group">
-                <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
-                <a id="btn-order" class="btn-file disabled" target="_blank">📄 <span>Файл</span></a>
-            </div>
+            <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
+            <div id="files-order" class="file-list"></div>
         </div>
 
         <div style="text-align: right; font-size: 11px; color: #999;">ID Сделки: <span id="deal-id-display">...</span></div>
@@ -113,25 +105,30 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // === КОДЫ СВОЙСТВ ФАЙЛОВ ===
-        FILE_DOGOVOR: "PROPERTY_309",
-        FILE_SPEC: "PROPERTY_313",
-        FILE_ORDER: "PROPERTY_311"
+        // Коды свойств (API CODES) - используются для получения данных
+        FILE_CODE_DOGOVOR: "PROPERTY_309",
+        FILE_CODE_SPEC: "PROPERTY_313",
+        FILE_CODE_ORDER: "PROPERTY_311"
     }
 };
 
 const app = {
     dealId: 0,
-    domain: null, // Сюда сохраним адрес портала (riverclack.bitrix24.ru)
+    domain: null,
     started: false,
+    
+    // Сюда сохраним реальные числовые ID полей для ссылок (из lists.field.get)
+    realFieldIds: {
+        dogovor: null,
+        spec: null,
+        order: null
+    },
 
     init: function() {
         const urlParams = new URLSearchParams(window.location.search);
         
-        // Пытаемся получить домен из URL для формирования ссылок
         this.domain = urlParams.get('DOMAIN');
         if(!this.domain && document.referrer) {
-             // Пытаемся вытащить из реферера
              try { this.domain = new URL(document.referrer).hostname; } catch(e){}
         }
 
@@ -147,7 +144,6 @@ const app = {
             this.start(idFromUrl);
         } else {
             BX24.init(() => {
-                // Если запустились через библиотеку, домен берем оттуда
                 this.domain = BX24.getAuth().domain; 
                 BX24.placement.info((info) => {
                     if (info.placement === 'CRM_DEAL_DETAIL_TAB') {
@@ -172,8 +168,12 @@ const app = {
         document.getElementById('deal-id-display').innerText = id;
         
         BX24.fitWindow();
-        logic.loadDogovors();
-        logic.syncWithDeal();
+        
+        // Сначала узнаем реальные ID полей, потом грузим данные
+        logic.resolveFieldIds(() => {
+            logic.loadDogovors();
+            logic.syncWithDeal();
+        });
     },
 
     showInstall: function() {
@@ -193,55 +193,80 @@ const app = {
 };
 
 const logic = {
-    // Хранилище для привязки ID Элемента -> ID Файла
-    fileCache: {
-        dogovor: {},
-        spec: {},
-        order: {}
+    fileCache: { dogovor: {}, spec: {}, order: {} },
+
+    // Функция для получения реальных ID полей, чтобы ссылка работала
+    resolveFieldIds: function(callback) {
+        log("Resolving Field IDs...");
+        
+        const batch = {
+            dogovor: ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR }],
+            spec:    ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC }],
+            order:   ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER }]
+        };
+
+        BX24.callBatch(batch, (res) => {
+            // Ищем ID поля, у которого FIELD_ID == PROPERTY_309 и т.д.
+            
+            const findId = (fields, code) => {
+                const f = Object.values(fields).find(item => item.FIELD_ID === code);
+                return f ? f.ID : null; // Возвращаем числовой ID (например "1420")
+            };
+
+            if(res.dogovor.data()) app.realFieldIds.dogovor = findId(res.dogovor.data(), CONFIG.PROPS.FILE_CODE_DOGOVOR);
+            if(res.spec.data())    app.realFieldIds.spec    = findId(res.spec.data(),    CONFIG.PROPS.FILE_CODE_SPEC);
+            if(res.order.data())   app.realFieldIds.order   = findId(res.order.data(),   CONFIG.PROPS.FILE_CODE_ORDER);
+
+            log("IDs found: " + JSON.stringify(app.realFieldIds));
+            callback();
+        });
     },
 
-    // Функция для получения ID файла из "странного" формата Битрикса
-    extractFileId: function(propValue) {
-        if (!propValue) return null;
-        // Битрикс часто возвращает свойства типа Файл как объект {"0": "123"} или массив ["123"]
+    // Разбираем множественные файлы
+    extractFileIds: function(propValue) {
+        if (!propValue) return [];
+        // Если объект {"0": "123", "1": "456"}
         if (typeof propValue === 'object') {
-            return Object.values(propValue)[0];
+            return Object.values(propValue);
         }
-        return propValue;
+        // Если одиночное значение
+        return [propValue];
     },
 
-    // Обновление кнопки файла
-    updateFileButton: function(btnId, selectId, cacheKey, iblockId, fieldIdNumeric) {
-        const btn = document.getElementById(btnId);
+    // Отрисовка кнопок файлов
+    renderFiles: function(containerId, selectId, cacheKey, iblockId, realFieldId) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = ''; // Очистка
+        
         const selectedValue = document.getElementById(selectId).value;
-        const fileId = this.fileCache[cacheKey][selectedValue];
+        if (!selectedValue) return;
 
-        if (fileId && app.domain) {
-            btn.classList.remove('disabled');
-            // Формируем ссылку для скачивания файла из Списков
-            // Формат: /bitrix/components/bitrix/lists.element.edit/show_file.php?ib=IBLOCK_ID&id=ELEMENT_ID&field_id=FIELD_ID&file_id=FILE_ID
-            const link = `https://${app.domain}/bitrix/components/bitrix/lists.element.edit/show_file.php?ib=${iblockId}&id=${selectedValue}&field_id=${fieldIdNumeric}&file_id=${fileId}`;
-            btn.href = link;
-        } else {
-            btn.classList.add('disabled');
-            btn.href = "javascript:void(0)";
+        const fileIds = this.fileCache[cacheKey][selectedValue];
+        
+        if (fileIds && fileIds.length > 0 && app.domain && realFieldId) {
+            fileIds.forEach((fileId, index) => {
+                const link = `https://${app.domain}/bitrix/components/bitrix/lists.element.edit/show_file.php?ib=${iblockId}&id=${selectedValue}&field_id=${realFieldId}&file_id=${fileId}`;
+                
+                const btn = document.createElement('a');
+                btn.className = 'btn-file';
+                btn.href = link;
+                btn.target = '_blank';
+                btn.innerHTML = `📄 <span>Файл ${index + 1}</span>`;
+                container.appendChild(btn);
+            });
         }
     },
 
     loadDogovors: function() {
-        log("Loading Dogovors + Files...");
         BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', 
-            IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_DOGOVOR] // Запрашиваем поле файла
+            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_DOGOVOR]
         }, res => {
             if(res.error()) return log("Err: " + res.error());
-            
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => {
                 html += `<option value="${i.ID}">${i.NAME}</option>`;
-                // Сохраняем ID файла в кэш
-                this.fileCache.dogovor[i.ID] = this.extractFileId(i[CONFIG.PROPS.FILE_DOGOVOR]);
+                this.fileCache.dogovor[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_DOGOVOR]);
             });
             document.getElementById('select-dogovor').innerHTML = html;
         });
@@ -252,30 +277,26 @@ const logic = {
         const elOrd = document.getElementById('select-order');
         el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
         elOrd.innerHTML = '<option>...</option>'; elOrd.disabled = true;
-        
-        // Сброс кнопок
-        document.getElementById('btn-spec').classList.add('disabled');
-        document.getElementById('btn-order').classList.add('disabled');
+        document.getElementById('files-spec').innerHTML = '';
+        document.getElementById('files-order').innerHTML = '';
 
         if(!parentId) return;
 
         BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', 
-            IBLOCK_ID: CONFIG.LISTS.SPEC,
+            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
             FILTER: { [CONFIG.PROPS.LINK_TO_DOGOVOR]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_SPEC] // Запрашиваем поле файла
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_SPEC]
         }, res => {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                // Сохраняем файл
-                this.fileCache.spec[i.ID] = this.extractFileId(i[CONFIG.PROPS.FILE_SPEC]);
+                this.fileCache.spec[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_SPEC]);
             });
             el.disabled = false;
             
             if(selected) { 
                 el.value = selected; 
-                this.updateFileButton('btn-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, '313'); // 313 из настроек
+                this.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, app.realFieldIds.spec);
                 this.loadOrders(selected, logic.savedOrder); 
             }
         });
@@ -284,25 +305,24 @@ const logic = {
     loadOrders: function(parentId, selected = null) {
         const el = document.getElementById('select-order');
         el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
-        document.getElementById('btn-order').classList.add('disabled');
+        document.getElementById('files-order').innerHTML = '';
 
         if(!parentId) return;
 
         BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', 
-            IBLOCK_ID: CONFIG.LISTS.ORDER,
+            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
             FILTER: { [CONFIG.PROPS.LINK_TO_SPEC]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_ORDER] // Запрашиваем поле файла
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_ORDER]
         }, res => {
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.order[i.ID] = this.extractFileId(i[CONFIG.PROPS.FILE_ORDER]);
+                this.fileCache.order[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_ORDER]);
             });
             el.disabled = false;
             if(selected) {
                 el.value = selected;
-                this.updateFileButton('btn-order', 'select-order', 'order', CONFIG.LISTS.ORDER, '311'); // 311 из настроек
+                this.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, app.realFieldIds.order);
             }
         });
     },
@@ -323,8 +343,7 @@ const logic = {
                     if(el.options.length > 1) {
                         clearInterval(waiter);
                         el.value = dogovorId;
-                        // Обновляем кнопку первого уровня
-                        this.updateFileButton('btn-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, '309');
+                        this.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, app.realFieldIds.dogovor);
                         this.loadSpecs(dogovorId, specId);
                     }
                 }, 100);
@@ -344,21 +363,20 @@ const logic = {
     }
 };
 
-// События: при изменении списка обновляем зависимые списки И кнопку файла
 document.getElementById('select-dogovor').onchange = function() { 
-    logic.updateFileButton('btn-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, '309');
+    logic.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, app.realFieldIds.dogovor);
     logic.loadSpecs(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-spec').onchange = function() { 
-    logic.updateFileButton('btn-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, '313');
+    logic.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, app.realFieldIds.spec);
     logic.loadOrders(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-order').onchange = function() { 
-    logic.updateFileButton('btn-order', 'select-order', 'order', CONFIG.LISTS.ORDER, '311');
+    logic.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, app.realFieldIds.order);
     logic.save(); 
 };
 
