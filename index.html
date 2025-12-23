@@ -6,7 +6,7 @@
     <title>Связанные списки 1С</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <style>
-        /* Чистый CSS без лишних стилей Тильды */
+        /* Чистый CSS */
         body { margin: 0; padding: 0; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         #app { padding: 15px; max-width: 600px; }
         
@@ -23,7 +23,7 @@
         .b24-select:focus { border-color: #2fc6f6; }
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
 
-        /* Кнопки установки */
+        /* Кнопки */
         .btn-install {
             display: inline-block; padding: 12px 24px; background: #2fc6f6; 
             color: #fff; text-decoration: none; border-radius: 4px; 
@@ -37,19 +37,24 @@
         #ui-loader { text-align: center; color: #888; margin-top: 20px; font-size: 14px; }
         #install-screen, #main-screen { display: none; }
         
-        .error-msg { color: red; background: #ffebeb; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; }
+        .error-msg { color: red; background: #ffebeb; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; display: none; }
+        #debug-info { font-size: 10px; color: #ccc; margin-top: 20px; text-align: center;}
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div id="error-block" style="display:none;" class="error-msg"></div>
+    <div id="error-block" class="error-msg"></div>
 
-    <div id="ui-loader">Загрузка приложения...</div>
+    <div id="ui-loader">
+        Загрузка приложения...<br>
+        <span style="font-size: 10px; color: #ccc;">(Ожидание ответа от Битрикс24)</span>
+    </div>
 
     <div id="install-screen" style="text-align:center; padding-top: 20px;">
         <h3>Настройка приложения</h3>
-        <p>Нажмите кнопку, чтобы встроить вкладку в Сделку.</p>
+        <p>1. Если вы видите это внутри Сделки — что-то пошло не так с передачей ID.</p>
+        <p>2. Если вы открыли из меню — нажмите "Встроить".</p>
         <button class="btn-install" onclick="app.install()">Встроить в карточку Сделки</button>
         <br><br>
         <button class="btn-install btn-remove" onclick="app.uninstall()">Удалить старые встройки</button>
@@ -75,6 +80,8 @@
             Сделка ID: <span id="debug-deal-id">...</span>
         </div>
     </div>
+    
+    <div id="debug-info">Status: Init...</div>
 </div>
 
 <script>
@@ -82,7 +89,6 @@ const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
         LINK: "PROPERTY_PARENT_DOGOVOR", 
-        // ВНИМАНИЕ: Проверьте коды полей в Сделке!
         DEAL_DOGOVOR: "UF_CRM_1766155842",
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959"
@@ -91,57 +97,90 @@ const CONFIG = {
 
 const app = {
     dealId: 0,
+    started: false,
     
+    // === ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ===
     init: function() {
+        console.log("App init started");
+        
+        // 1. Запускаем стандартную инициализацию
         BX24.init(() => {
-            // Сразу пытаемся понять, где мы
+            console.log("BX24 Init complete");
             BX24.placement.info((info) => {
-                const urlParams = new URLSearchParams(window.location.search);
-                
-                // Способ 1: Штатный placement
-                if (info && info.placement === 'CRM_DEAL_DETAIL_TAB') {
-                    this.start(info.options.ID);
-                    return;
-                }
-                
-                // Способ 2: Параметры URL (если штатный не сработал)
-                let idFromUrl = urlParams.get('PLACEMENT_OPTIONS[ID]');
-                if (!idFromUrl && urlParams.get('PLACEMENT_OPTIONS')) {
-                    try { idFromUrl = JSON.parse(urlParams.get('PLACEMENT_OPTIONS')).ID; } catch(e){}
-                }
-
-                if (idFromUrl) {
-                    this.start(idFromUrl);
-                } else {
-                    this.showInstallScreen();
-                }
+                console.log("Placement info received", info);
+                this.checkAndStart('library', info);
             });
         });
+
+        // 2. ЗАПАСНОЙ ПЛАН: Если Битрикс молчит более 1 секунды, пробуем взять ID из URL сами
+        setTimeout(() => {
+            if (!this.started) {
+                console.log("Timeout fallback triggered");
+                this.checkAndStart('fallback');
+            }
+        }, 800);
+    },
+
+    checkAndStart: function(source, info = null) {
+        if (this.started) return; // Защита от двойного запуска
+
+        let id = null;
+
+        // Попытка 1: Из данных placement (если библиотека сработала)
+        if (info && info.placement === 'CRM_DEAL_DETAIL_TAB') {
+            id = info.options.ID;
+        }
+
+        // Попытка 2: Парсим URL (работает всегда при POST запросе)
+        if (!id) {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Ищем в PLACEMENT_OPTIONS[ID]
+            id = urlParams.get('PLACEMENT_OPTIONS[ID]');
+            
+            // Ищем в JSON строке PLACEMENT_OPTIONS
+            if (!id && urlParams.get('PLACEMENT_OPTIONS')) {
+                try { 
+                    const parsed = JSON.parse(urlParams.get('PLACEMENT_OPTIONS'));
+                    if (parsed && parsed.ID) id = parsed.ID;
+                } catch(e){}
+            }
+        }
+
+        document.getElementById('debug-info').innerText = `Source: ${source}, ID found: ${id}`;
+
+        if (id) {
+            this.start(id);
+        } else {
+            // Если ID нигде не найден, значит мы не в сделке -> показываем установку
+            this.showInstallScreen();
+        }
     },
 
     start: function(id) {
+        this.started = true;
         this.dealId = id;
+        
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('main-screen').style.display = 'block';
         document.getElementById('debug-deal-id').innerText = id;
 
-        // Авто-ресайз окна
         BX24.fitWindow();
 
-        // Запуск логики
+        // Логика загрузки данных
         logic.loadDogovors();
         logic.syncWithDeal();
     },
 
     showInstallScreen: function() {
+        this.started = true;
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'block';
     },
 
     install: function() {
-        // Берем текущий URL без параметров
-        const cleanUrl = window.location.href.split('?')[0];
+        const cleanUrl = window.location.protocol + "//" + window.location.host + "/";
         
         BX24.callMethod('placement.bind', {
             PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
@@ -155,11 +194,19 @@ const app = {
     },
 
     uninstall: function() {
-        const cleanUrl = window.location.href.split('?')[0];
+        const cleanUrl = window.location.protocol + "//" + window.location.host + "/";
+        
+        // Удаляем чистую ссылку
         BX24.callMethod('placement.unbind', {
             PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
             HANDLER: cleanUrl
-        }, () => alert('Встройка удалена.'));
+        }, () => {
+            // На всякий случай удаляем текущую (грязную) ссылку
+             BX24.callMethod('placement.unbind', {
+                PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
+                HANDLER: window.location.href
+            }, () => alert('Встройка удалена.'));
+        });
     },
     
     error: function(msg) {
@@ -175,7 +222,7 @@ const logic = {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, SELECT: ['ID', 'NAME']
         }, res => {
-            if(res.error()) return app.error(res.error());
+            if(res.error()) return app.error("Ошибка загрузки договоров: " + res.error());
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => html += `<option value="${i.ID}">${i.NAME}</option>`);
             document.getElementById('select-dogovor').innerHTML = html;
@@ -198,6 +245,7 @@ const logic = {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
             FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
+            if(res.error()) return app.error("Спецификации: " + res.error());
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
@@ -214,6 +262,7 @@ const logic = {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
             FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
+             if(res.error()) return app.error("Заказы: " + res.error());
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
@@ -221,7 +270,7 @@ const logic = {
         });
     },
     
-    savedOrder: null, // Храним временно
+    savedOrder: null,
 
     syncWithDeal: function() {
         BX24.callMethod('crm.deal.get', { ID: app.dealId }, res => {
@@ -232,7 +281,6 @@ const logic = {
             this.savedOrder = data[CONFIG.PROPS.DEAL_ORDER];
 
             if(dogovorId) {
-                // Ждем пока загрузится список договоров
                 const waiter = setInterval(() => {
                     const el = document.getElementById('select-dogovor');
                     if(el.options.length > 1) {
@@ -257,12 +305,10 @@ const logic = {
     }
 };
 
-// События
 document.getElementById('select-dogovor').onchange = function() { logic.loadSpecs(this.value); logic.save(); };
 document.getElementById('select-spec').onchange = function() { logic.loadOrders(this.value); logic.save(); };
 document.getElementById('select-order').onchange = function() { logic.save(); };
 
-// Старт
 app.init();
 </script>
 </body>
