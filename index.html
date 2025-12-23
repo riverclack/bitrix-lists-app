@@ -75,6 +75,7 @@ const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
         LINK: "PROPERTY_PROPERTY_PARENT_DOGOVOR", 
+        LINK_TO_SPEC: "PROPERTY_PROPERTY_PARENT_SPEC",
         DEAL_DOGOVOR: "UF_CRM_1766155842", // ПРОВЕРЬТЕ ЭТИ КОДЫ!
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959"
@@ -187,7 +188,7 @@ const logic = {
 
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
-            FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
+            FILTER: { [CONFIG.PROPS.LINK_TO_DOGOVOR]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
@@ -203,7 +204,7 @@ const logic = {
 
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
-            FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
+            FILTER: { [CONFIG.PROPS.LINK_TO_SPEC]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
