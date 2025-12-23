@@ -6,58 +6,42 @@
     <title>Связанные списки 1С</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <style>
-        /* Чистый CSS */
         body { margin: 0; padding: 0; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         #app { padding: 15px; max-width: 600px; }
-        
         .b24-field { margin-bottom: 15px; }
         .b24-label { font-size: 12px; color: #535c69; margin-bottom: 5px; display: block; font-weight: 600; text-transform: uppercase; }
-        
         .b24-select {
             display: block; width: 100%; height: 40px; padding: 0 10px;
             font-size: 15px; color: #333; background: #fff;
             border: 1px solid #c6cdd3; border-radius: 4px;
-            box-sizing: border-box;
-            outline: none;
+            box-sizing: border-box; outline: none;
         }
-        .b24-select:focus { border-color: #2fc6f6; }
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
-
-        /* Кнопки */
         .btn-install {
-            display: inline-block; padding: 12px 24px; background: #2fc6f6; 
+            display: inline-block; padding: 12px 24px; background: #9dcf00; 
             color: #fff; text-decoration: none; border-radius: 4px; 
             font-weight: bold; cursor: pointer; border: none; font-size: 14px;
-            transition: 0.2s;
         }
-        .btn-install:hover { background: #1db5e5; }
-        .btn-remove { background: #ff5752; margin-top: 10px; }
-        .btn-remove:hover { background: #e0443f; }
-
-        #ui-loader { text-align: center; color: #888; margin-top: 20px; font-size: 14px; }
+        #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
         
-        .error-msg { color: red; background: #ffebeb; padding: 10px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; display: none; }
-        #debug-info { font-size: 10px; color: #ccc; margin-top: 20px; text-align: center;}
+        /* Блок для отладки прямо на экране */
+        #visual-log { 
+            margin-top: 20px; padding: 10px; background: #000; color: #0f0; 
+            font-family: monospace; font-size: 10px; border-radius: 4px;
+            max-height: 200px; overflow-y: auto; word-break: break-all;
+        }
     </style>
 </head>
 <body>
 
 <div id="app">
-    <div id="error-block" class="error-msg"></div>
-
-    <div id="ui-loader">
-        Загрузка приложения...<br>
-        <span style="font-size: 10px; color: #ccc;">(Ожидание ответа от Битрикс24)</span>
-    </div>
+    <div id="ui-loader">Инициализация...</div>
 
     <div id="install-screen" style="text-align:center; padding-top: 20px;">
-        <h3>Настройка приложения</h3>
-        <p>1. Если вы видите это внутри Сделки — что-то пошло не так с передачей ID.</p>
-        <p>2. Если вы открыли из меню — нажмите "Встроить".</p>
-        <button class="btn-install" onclick="app.install()">Встроить в карточку Сделки</button>
-        <br><br>
-        <button class="btn-install btn-remove" onclick="app.uninstall()">Удалить старые встройки</button>
+        <h3>Приложение установлено</h3>
+        <p>Если вы видите этот экран внутри Сделки, значит ID не найден.</p>
+        <button class="btn-install" onclick="app.install()">Обновить встройку</button>
     </div>
 
     <div id="main-screen">
@@ -65,31 +49,33 @@
             <label class="b24-label">Договор с клиентом</label>
             <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
         </div>
-
         <div class="b24-field">
             <label class="b24-label">Спецификация</label>
             <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
         </div>
-
         <div class="b24-field">
             <label class="b24-label">Заказ Клиента</label>
             <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
         </div>
-        
-        <div style="text-align: right; font-size: 11px; color: #999;">
-            Сделка ID: <span id="debug-deal-id">...</span>
-        </div>
+        <div style="text-align: right; font-size: 11px; color: #999;">ID Сделки: <span id="deal-id-display">...</span></div>
     </div>
-    
-    <div id="debug-info">Status: Init...</div>
+
+    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
+// === ЛОГЕР НА ЭКРАН ===
+function log(msg) {
+    console.log(msg);
+    const el = document.getElementById('visual-log');
+    el.innerHTML = `> ${msg}<br>` + el.innerHTML;
+}
+
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
         LINK: "PROPERTY_PARENT_DOGOVOR", 
-        DEAL_DOGOVOR: "UF_CRM_1766155842",
+        DEAL_DOGOVOR: "UF_CRM_1766155842", // ПРОВЕРЬТЕ ЭТИ КОДЫ!
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959"
     }
@@ -98,154 +84,111 @@ const CONFIG = {
 const app = {
     dealId: 0,
     started: false,
-    
-    // === ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ ===
+
     init: function() {
-        console.log("App init started");
+        log("App init running...");
+        log("URL: " + window.location.search);
+
+        // 1. Проверяем URL сразу (благодаря новому server.js здесь должны быть данные)
+        const urlParams = new URLSearchParams(window.location.search);
+        let idFromUrl = urlParams.get('PLACEMENT_OPTIONS[ID]');
         
-        // 1. Запускаем стандартную инициализацию
-        BX24.init(() => {
-            console.log("BX24 Init complete");
-            BX24.placement.info((info) => {
-                console.log("Placement info received", info);
-                this.checkAndStart('library', info);
-            });
-        });
-
-        // 2. ЗАПАСНОЙ ПЛАН: Если Битрикс молчит более 1 секунды, пробуем взять ID из URL сами
-        setTimeout(() => {
-            if (!this.started) {
-                console.log("Timeout fallback triggered");
-                this.checkAndStart('fallback');
-            }
-        }, 800);
-    },
-
-    checkAndStart: function(source, info = null) {
-        if (this.started) return; // Защита от двойного запуска
-
-        let id = null;
-
-        // Попытка 1: Из данных placement (если библиотека сработала)
-        if (info && info.placement === 'CRM_DEAL_DETAIL_TAB') {
-            id = info.options.ID;
+        // Иногда Битрикс передает JSON
+        if (!idFromUrl && urlParams.get('PLACEMENT_OPTIONS')) {
+            try { 
+                const opts = JSON.parse(urlParams.get('PLACEMENT_OPTIONS'));
+                if (opts.ID) idFromUrl = opts.ID;
+            } catch(e) { log("JSON parse error"); }
         }
 
-        // Попытка 2: Парсим URL (работает всегда при POST запросе)
-        if (!id) {
-            const urlParams = new URLSearchParams(window.location.search);
-            
-            // Ищем в PLACEMENT_OPTIONS[ID]
-            id = urlParams.get('PLACEMENT_OPTIONS[ID]');
-            
-            // Ищем в JSON строке PLACEMENT_OPTIONS
-            if (!id && urlParams.get('PLACEMENT_OPTIONS')) {
-                try { 
-                    const parsed = JSON.parse(urlParams.get('PLACEMENT_OPTIONS'));
-                    if (parsed && parsed.ID) id = parsed.ID;
-                } catch(e){}
-            }
-        }
-
-        document.getElementById('debug-info').innerText = `Source: ${source}, ID found: ${id}`;
-
-        if (id) {
-            this.start(id);
+        if (idFromUrl) {
+            log("ID found in URL: " + idFromUrl);
+            this.start(idFromUrl);
         } else {
-            // Если ID нигде не найден, значит мы не в сделке -> показываем установку
-            this.showInstallScreen();
+            log("ID not in URL. Waiting for BX24...");
+            
+            // 2. Если в URL пусто, пробуем библиотеку
+            BX24.init(() => {
+                BX24.placement.info((info) => {
+                    log("BX24 Info: " + JSON.stringify(info));
+                    if (info.placement === 'CRM_DEAL_DETAIL_TAB') {
+                        this.start(info.options.ID);
+                    } else {
+                        log("Not in Deal Tab. Showing install.");
+                        this.showInstall();
+                    }
+                });
+            });
+
+            // Тайм-аут, если все молчат
+            setTimeout(() => {
+                if (!this.started) {
+                    log("Timeout! No ID found.");
+                    this.showInstall();
+                }
+            }, 2000);
         }
     },
 
     start: function(id) {
+        if (this.started) return;
         this.started = true;
         this.dealId = id;
+        log("STARTING APP for Deal " + id);
         
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('main-screen').style.display = 'block';
-        document.getElementById('debug-deal-id').innerText = id;
-
+        document.getElementById('deal-id-display').innerText = id;
+        
         BX24.fitWindow();
-
-        // Логика загрузки данных
         logic.loadDogovors();
         logic.syncWithDeal();
     },
 
-    showInstallScreen: function() {
-        this.started = true;
+    showInstall: function() {
+        if (this.started) return;
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'block';
     },
 
     install: function() {
+        // Установка чистой ссылки
         const cleanUrl = window.location.protocol + "//" + window.location.host + "/";
-        
         BX24.callMethod('placement.bind', {
             PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
             HANDLER: cleanUrl,
-            TITLE: '1C Списки',
-            DESCRIPTION: 'Данные из 1С'
-        }, res => {
-            if (res.error()) alert(res.error());
-            else alert('Успешно! Обновите страницу со сделкой (F5).');
-        });
-    },
-
-    uninstall: function() {
-        const cleanUrl = window.location.protocol + "//" + window.location.host + "/";
-        
-        // Удаляем чистую ссылку
-        BX24.callMethod('placement.unbind', {
-            PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
-            HANDLER: cleanUrl
-        }, () => {
-            // На всякий случай удаляем текущую (грязную) ссылку
-             BX24.callMethod('placement.unbind', {
-                PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
-                HANDLER: window.location.href
-            }, () => alert('Встройка удалена.'));
-        });
-    },
-    
-    error: function(msg) {
-        const el = document.getElementById('error-block');
-        el.innerText = "Ошибка: " + msg;
-        el.style.display = 'block';
-        console.error(msg);
+            TITLE: '1C Списки'
+        }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно! Обновите страницу."));
     }
 };
 
 const logic = {
     loadDogovors: function() {
+        log("Loading Dogovors...");
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, SELECT: ['ID', 'NAME']
         }, res => {
-            if(res.error()) return app.error("Ошибка загрузки договоров: " + res.error());
+            if(res.error()) return log("Error Dogovor: " + res.error());
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => html += `<option value="${i.ID}">${i.NAME}</option>`);
             document.getElementById('select-dogovor').innerHTML = html;
+            log("Dogovors loaded: " + res.data().length);
         });
     },
 
     loadSpecs: function(parentId, selected = null) {
         const el = document.getElementById('select-spec');
         const elOrd = document.getElementById('select-order');
-        
         el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
         elOrd.innerHTML = '<option>...</option>'; elOrd.disabled = true;
 
-        if(!parentId) {
-             el.innerHTML = '<option value="">Сначала выберите договор</option>';
-             return;
-        }
+        if(!parentId) return;
 
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
             FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
-            if(res.error()) return app.error("Спецификации: " + res.error());
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
@@ -262,7 +205,6 @@ const logic = {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
             FILTER: { [CONFIG.PROPS.LINK]: parentId }, SELECT: ['ID', 'NAME']
         }, res => {
-             if(res.error()) return app.error("Заказы: " + res.error());
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
@@ -273,9 +215,12 @@ const logic = {
     savedOrder: null,
 
     syncWithDeal: function() {
+        log("Syncing with Deal...");
         BX24.callMethod('crm.deal.get', { ID: app.dealId }, res => {
             if(!res.data()) return;
             const data = res.data();
+            log("Deal Data: " + JSON.stringify(data)); // Посмотрим, какие поля пришли
+            
             const dogovorId = data[CONFIG.PROPS.DEAL_DOGOVOR];
             const specId = data[CONFIG.PROPS.DEAL_SPEC];
             this.savedOrder = data[CONFIG.PROPS.DEAL_ORDER];
