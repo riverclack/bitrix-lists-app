@@ -19,13 +19,15 @@
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
         .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; align-items: center;}
         
+        /* Стиль кнопки (теперь это div, имитирующий кнопку) */
         .btn-file {
             display: inline-flex; align-items: center; padding: 6px 12px;
             background: #f0f2f5; border: 1px solid #c6cdd3; border-radius: 15px;
-            color: #535c69; text-decoration: none; font-size: 12px; font-weight: 600;
-            transition: 0.2s; cursor: pointer;
+            color: #535c69; font-size: 12px; font-weight: 600;
+            transition: 0.2s; cursor: pointer; user-select: none;
         }
         .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
+        .btn-file:active { background: #dde2e5; }
         
         .btn-link { 
             text-decoration: none; font-size: 14px; color: #2fc6f6; margin-left: 5px; 
@@ -40,6 +42,7 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
+        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; display:none; }
     </style>
 </head>
 <body>
@@ -69,9 +72,16 @@
             <div id="files-order" class="file-list"></div>
         </div>
     </div>
+    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
+function log(msg) {
+    console.log(msg);
+    // const el = document.getElementById('visual-log');
+    // if(el) el.innerHTML = `> ${msg}<br>` + el.innerHTML;
+}
+
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
@@ -82,8 +92,7 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // === ВАЖНО: ЧИСТОВЫЕ ID ДЛЯ ГЕНЕРАЦИИ ССЫЛОК ===
-        // Это те цифры, которые выдал сканер (309, 313, 311)
+        // Числовые ID полей файлов (из сканера)
         FILE_IDS: {
             DOGOVOR: 309,
             SPEC: 313,
@@ -149,22 +158,42 @@ const app = {
             HANDLER: cleanUrl,
             TITLE: '1C Списки'
         }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
+    },
+
+    // === ФУНКЦИЯ СКАЧИВАНИЯ ЧЕРЕЗ БИТРИКС ===
+    downloadFile: function(url) {
+        // 1. Убираем домен, чтобы получить относительный путь (например, /company/lists/...)
+        // openPath лучше работает с путями от корня портала
+        let relativePath = url;
+        try {
+            const urlObj = new URL(url);
+            relativePath = urlObj.pathname + urlObj.search;
+        } catch(e) {
+            // Если url уже относительный, ничего не делаем
+        }
+
+        console.log("Opening path:", relativePath);
+        
+        // 2. Командуем родительскому окну открыть этот путь
+        // Это использует сессию пользователя в основном окне
+        BX24.openPath(relativePath, function(result){
+            // Колбэк на случай отладки, обычно не нужен для скачивания
+            console.log("openPath result:", result);
+        });
     }
 };
 
 const logic = {
-    // ВАЖНО: Используем правильный метод Битрикса для получения ссылок
-    // Он возвращает готовые ссылки с токеном авторизации
     fetchFileLinks: function(containerId, iblockId, elementId, fieldIdNumeric) {
         const container = document.getElementById(containerId);
-        container.innerHTML = '<i>Загрузка ссылок...</i>';
+        container.innerHTML = '<i>Загрузка...</i>';
 
         if (!elementId) {
             container.innerHTML = '';
             return;
         }
 
-        // 1. Ссылка на саму карточку
+        // Кнопка перехода в список
         const itemLink = document.createElement('a');
         itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${elementId}/`;
         itemLink.target = "_blank";
@@ -172,33 +201,31 @@ const logic = {
         itemLink.innerHTML = "Открыть карточку ↗"; 
         container.appendChild(itemLink);
 
-        // 2. Запрос ссылок на файлы
         BX24.callMethod('lists.element.get.file.url', {
             IBLOCK_TYPE_ID: 'lists',
             IBLOCK_ID: iblockId,
             ELEMENT_ID: elementId,
-            FIELD_ID: fieldIdNumeric // ВАЖНО: Передаем число (309), а не строку PROPERTY_309
+            FIELD_ID: fieldIdNumeric // Передаем число (309)
         }, function(res) {
-            
-            // Убираем текст загрузки, оставляем ссылку на карточку
             container.innerHTML = '';
             container.appendChild(itemLink);
 
-            if(res.error()) {
-                console.error("File Error:", res.error());
-                return;
-            }
+            if(res.error()) return console.error(res.error());
 
-            const urls = res.data(); 
-            // Битрикс возвращает массив ссылок
+            const urls = res.data();
             
             if (urls && urls.length > 0) {
                 urls.forEach((url, index) => {
-                    const btn = document.createElement('a');
+                    // Создаем div вместо ссылки, чтобы избежать блокировок браузера
+                    const btn = document.createElement('div');
                     btn.className = 'btn-file';
-                    btn.href = url; // Это готовая ссылка с токеном!
-                    btn.target = '_blank'; // Открываем в новой вкладке
                     btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
+                    
+                    // Вешаем обработчик клика
+                    btn.onclick = function() {
+                        app.downloadFile(url);
+                    };
+                    
                     container.appendChild(btn);
                 });
             }
@@ -208,13 +235,11 @@ const logic = {
     loadDogovors: function() {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
-            SELECT: ['ID', 'NAME'] // Файлы не нужны, запрашиваем ссылки отдельным методом
+            SELECT: ['ID', 'NAME'] 
         }, res => {
             if(res.error()) return console.error(res.error());
             let html = '<option value="">Выберите договор</option>';
-            res.data().forEach(i => {
-                html += `<option value="${i.ID}">${i.NAME}</option>`;
-            });
+            res.data().forEach(i => html += `<option value="${i.ID}">${i.NAME}</option>`);
             document.getElementById('select-dogovor').innerHTML = html;
         });
     },
@@ -235,14 +260,11 @@ const logic = {
             SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
-            res.data().forEach(i => {
-                el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-            });
+            res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
             
             if(selected) { 
                 el.value = selected; 
-                // Загружаем ссылки (передаем 313)
                 this.fetchFileLinks('files-spec', CONFIG.LISTS.SPEC, selected, CONFIG.PROPS.FILE_IDS.SPEC);
                 this.loadOrders(selected, logic.savedOrder); 
             }
@@ -262,13 +284,10 @@ const logic = {
             SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите заказ</option>';
-            res.data().forEach(i => {
-                el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-            });
+            res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
             if(selected) {
                 el.value = selected;
-                // Загружаем ссылки (передаем 311)
                 this.fetchFileLinks('files-order', CONFIG.LISTS.ORDER, selected, CONFIG.PROPS.FILE_IDS.ORDER);
             }
         });
@@ -290,7 +309,6 @@ const logic = {
                     if(el.options.length > 1) {
                         clearInterval(waiter);
                         el.value = dogovorId;
-                        // Загружаем ссылки (передаем 309)
                         this.fetchFileLinks('files-dogovor', CONFIG.LISTS.DOGOVOR, dogovorId, CONFIG.PROPS.FILE_IDS.DOGOVOR);
                         this.loadSpecs(dogovorId, specId);
                     }
