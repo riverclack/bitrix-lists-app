@@ -27,7 +27,6 @@
         }
         .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
         
-        /* Добавил цвет для наглядности ссылок */
         .btn-link { 
             text-decoration: none; font-size: 14px; color: #2fc6f6; margin-left: 5px; 
             padding: 4px 8px; border: 1px solid transparent; border-radius: 4px;
@@ -70,16 +69,15 @@
             <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
             <div id="files-order" class="file-list"></div>
         </div>
-        <div style="text-align: right; font-size: 11px; color: #999;">ID Сделки: <span id="deal-id-display">...</span></div>
     </div>
-    <div id="visual-log">Log started...</div>
+    
+    <div id="visual-log" style="display:none;">Log started...</div>
 </div>
 
 <script>
 function log(msg) {
     console.log(msg);
-    const el = document.getElementById('visual-log');
-    el.innerHTML = `> ${msg}<br>` + el.innerHTML;
+    // document.getElementById('visual-log').innerHTML = `> ${msg}<br>` + document.getElementById('visual-log').innerHTML;
 }
 
 const CONFIG = {
@@ -92,7 +90,7 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // Коды полей для ПОЛУЧЕНИЯ ID файлов
+        // API коды свойств с файлами
         FILE_DOGOVOR: "PROPERTY_309",
         FILE_SPEC: "PROPERTY_313",
         FILE_ORDER: "PROPERTY_311"
@@ -137,7 +135,6 @@ const app = {
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('main-screen').style.display = 'block';
-        document.getElementById('deal-id-display').innerText = id;
         BX24.fitWindow();
         
         logic.loadDogovors();
@@ -157,6 +154,14 @@ const app = {
             HANDLER: cleanUrl,
             TITLE: '1C Списки'
         }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
+    },
+
+    // === ГЛАВНОЕ ИСПРАВЛЕНИЕ: Открываем файл через родительское окно ===
+    openFile: function(fileId) {
+        // Используем мобильный обработчик, так как он самый "всеядный"
+        const path = '/bitrix/services/mobile/file.php?fileId=' + fileId;
+        // Команда openPath открывает ссылку в родительском окне Битрикса, где авторизация работает
+        BX24.openPath(path);
     }
 };
 
@@ -175,7 +180,7 @@ const logic = {
         const selectedValue = document.getElementById(selectId).value;
         if (!selectedValue) return;
 
-        // 1. Ссылка на сам элемент списка (на всякий случай)
+        // 1. Ссылка на карточку элемента (открываем в новом окне)
         const itemLink = document.createElement('a');
         itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${selectedValue}/`;
         itemLink.target = "_blank";
@@ -185,17 +190,14 @@ const logic = {
 
         const fileIds = this.fileCache[cacheKey][selectedValue];
         
-        // 2. Ссылки на файлы
+        // 2. Кнопки файлов
         if (fileIds && fileIds.length > 0) {
             fileIds.forEach((fileId, index) => {
-                // ИСПОЛЬЗУЕМ "ВСЕЯДНЫЙ" МОБИЛЬНЫЙ ЗАГРУЗЧИК
-                // Он работает с обычными ID файлов (не Disk Object)
-                const link = `https://${app.domain}/bitrix/services/mobile/file.php?fileId=${fileId}`;
-                
-                const btn = document.createElement('a');
+                const btn = document.createElement('div'); // Используем div, чтобы это не было ссылкой
                 btn.className = 'btn-file';
-                btn.href = link;
-                // btn.target = '_blank'; // Мобильный загрузчик сам инициирует скачивание
+                btn.style.cursor = 'pointer';
+                // При клике вызываем JS функцию открытия
+                btn.onclick = function() { app.openFile(fileId); };
                 btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
                 container.appendChild(btn);
             });
