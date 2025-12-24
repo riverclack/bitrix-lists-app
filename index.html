@@ -40,7 +40,8 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
-        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; }
+        /* Log hidden by default */
+        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; display:none; }
     </style>
 </head>
 <body>
@@ -71,13 +72,15 @@
         </div>
     </div>
     
-    <div id="visual-log" style="display:none;">Log started...</div>
+    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
 function log(msg) {
     console.log(msg);
-    // document.getElementById('visual-log').innerHTML = `> ${msg}<br>` + document.getElementById('visual-log').innerHTML;
+    // Uncomment to enable on-screen logging
+    // const el = document.getElementById('visual-log');
+    // if(el) el.innerHTML = `> ${msg}<br>` + el.innerHTML;
 }
 
 const CONFIG = {
@@ -90,7 +93,7 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // API коды свойств с файлами
+        // API codes to fetch file data
         FILE_DOGOVOR: "PROPERTY_309",
         FILE_SPEC: "PROPERTY_313",
         FILE_ORDER: "PROPERTY_311"
@@ -156,11 +159,11 @@ const app = {
         }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
     },
 
-    // === ГЛАВНОЕ ИСПРАВЛЕНИЕ: Открываем файл через родительское окно ===
+    // === KEY FUNCTION: Opens file using parent window context ===
     openFile: function(fileId) {
-        // Используем мобильный обработчик, так как он самый "всеядный"
+        // This handler works with standard file IDs
         const path = '/bitrix/services/mobile/file.php?fileId=' + fileId;
-        // Команда openPath открывает ссылку в родительском окне Битрикса, где авторизация работает
+        // openPath executes the request in the parent Bitrix window, bypassing iframe cookie blocks
         BX24.openPath(path);
     }
 };
@@ -180,7 +183,7 @@ const logic = {
         const selectedValue = document.getElementById(selectId).value;
         if (!selectedValue) return;
 
-        // 1. Ссылка на карточку элемента (открываем в новом окне)
+        // 1. Link to List Element (opens in new window)
         const itemLink = document.createElement('a');
         itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${selectedValue}/`;
         itemLink.target = "_blank";
@@ -190,13 +193,13 @@ const logic = {
 
         const fileIds = this.fileCache[cacheKey][selectedValue];
         
-        // 2. Кнопки файлов
+        // 2. File Buttons
         if (fileIds && fileIds.length > 0) {
             fileIds.forEach((fileId, index) => {
-                const btn = document.createElement('div'); // Используем div, чтобы это не было ссылкой
+                const btn = document.createElement('div'); // Using div instead of 'a'
                 btn.className = 'btn-file';
                 btn.style.cursor = 'pointer';
-                // При клике вызываем JS функцию открытия
+                // Click handler triggers the JS function
                 btn.onclick = function() { app.openFile(fileId); };
                 btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
                 container.appendChild(btn);
