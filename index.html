@@ -2,314 +2,46 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Связанные списки 1С</title>
+    <title>Scanner</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
-    <style>
-        body { margin: 0; padding: 0; background: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-        #app { padding: 15px; max-width: 600px; }
-        .b24-field { margin-bottom: 15px; }
-        .b24-label { font-size: 12px; color: #535c69; margin-bottom: 5px; display: block; font-weight: 600; text-transform: uppercase; }
-        .b24-select {
-            display: block; width: 100%; height: 40px; padding: 0 10px;
-            font-size: 15px; color: #333; background: #fff;
-            border: 1px solid #c6cdd3; border-radius: 4px;
-            box-sizing: border-box; outline: none; margin-bottom: 5px;
-        }
-        .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
-        .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; }
-        .btn-file {
-            display: inline-flex; align-items: center; padding: 6px 12px;
-            background: #f0f2f5; border: 1px solid #c6cdd3; border-radius: 15px;
-            color: #535c69; text-decoration: none; font-size: 12px; font-weight: 600;
-            transition: 0.2s; cursor: pointer;
-        }
-        .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
-        .btn-install {
-            display: inline-block; padding: 12px 24px; background: #9dcf00; 
-            color: #fff; text-decoration: none; border-radius: 4px; 
-            font-weight: bold; cursor: pointer; border: none; font-size: 14px;
-        }
-        #ui-loader { text-align: center; color: #888; margin-top: 20px; }
-        #install-screen, #main-screen { display: none; }
-        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; }
-    </style>
+    <style>body{font-family:monospace;padding:20px;}</style>
 </head>
 <body>
-
-<div id="app">
-    <div id="ui-loader">Инициализация...</div>
-
-    <div id="install-screen" style="text-align:center; padding-top: 20px;">
-        <h3>Приложение установлено</h3>
-        <button class="btn-install" onclick="app.install()">Обновить встройку</button>
-    </div>
-
-    <div id="main-screen">
-        <div class="b24-field">
-            <label class="b24-label">Договор с клиентом</label>
-            <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
-            <div id="files-dogovor" class="file-list"></div>
-        </div>
-        <div class="b24-field">
-            <label class="b24-label">Спецификация</label>
-            <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
-            <div id="files-spec" class="file-list"></div>
-        </div>
-        <div class="b24-field">
-            <label class="b24-label">Заказ Клиента</label>
-            <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
-            <div id="files-order" class="file-list"></div>
-        </div>
-        <div style="text-align: right; font-size: 11px; color: #999;">ID Сделки: <span id="deal-id-display">...</span></div>
-    </div>
-    <div id="visual-log">Log started...</div>
-</div>
-
-<script>
-function log(msg) {
-    console.log(msg);
-    const el = document.getElementById('visual-log');
-    el.innerHTML = `> ${msg}<br>` + el.innerHTML;
-}
-
-const CONFIG = {
-    LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
-    PROPS: {
-        // Коды для связей (фильтрации)
-        LINK_TO_DOGOVOR: "PROPERTY_PROPERTY_PARENT_DOGOVOR", 
-        LINK_TO_SPEC: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", 
-        
-        // Поля сделки
-        DEAL_DOGOVOR: "UF_CRM_1766155842",
-        DEAL_SPEC: "UF_CRM_1766155890",
-        DEAL_ORDER: "UF_CRM_1766155959",
-
-        // === ИСПРАВЛЕННЫЕ КОДЫ ФАЙЛОВ ===
-        // Мы используем их и для получения данных, и для формирования ссылки
-        FILE_DOGOVOR: "PROPERTY_309",
-        FILE_SPEC: "PROPERTY_313",
-        FILE_ORDER: "PROPERTY_311"
-    }
-};
-
-const app = {
-    dealId: 0,
-    domain: null,
-    started: false,
-
-    init: function() {
-        const urlParams = new URLSearchParams(window.location.search);
-        this.domain = urlParams.get('DOMAIN');
-        if(!this.domain && document.referrer) {
-             try { this.domain = new URL(document.referrer).hostname; } catch(e){}
-        }
-
-        let idFromUrl = urlParams.get('PLACEMENT_OPTIONS[ID]');
-        if (!idFromUrl && urlParams.get('PLACEMENT_OPTIONS')) {
-            try { const opts = JSON.parse(urlParams.get('PLACEMENT_OPTIONS')); if (opts.ID) idFromUrl = opts.ID; } catch(e) {}
-        }
-
-        if (idFromUrl) {
-            this.start(idFromUrl);
-        } else {
-            BX24.init(() => {
-                this.domain = BX24.getAuth().domain; 
-                BX24.placement.info((info) => {
-                    if (info.placement === 'CRM_DEAL_DETAIL_TAB') this.start(info.options.ID);
-                    else this.showInstall();
-                });
-            });
-            setTimeout(() => { if (!this.started) this.showInstall(); }, 2000);
-        }
-    },
-
-    start: function(id) {
-        if (this.started) return;
-        this.started = true;
-        this.dealId = id;
-        document.getElementById('ui-loader').style.display = 'none';
-        document.getElementById('install-screen').style.display = 'none';
-        document.getElementById('main-screen').style.display = 'block';
-        document.getElementById('deal-id-display').innerText = id;
-        BX24.fitWindow();
-        
-        logic.loadDogovors();
-        logic.syncWithDeal();
-    },
-
-    showInstall: function() {
-        if (this.started) return;
-        document.getElementById('ui-loader').style.display = 'none';
-        document.getElementById('install-screen').style.display = 'block';
-    },
-
-    install: function() {
-        const cleanUrl = window.location.protocol + "//" + window.location.host + "/";
-        BX24.callMethod('placement.bind', {
-            PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
-            HANDLER: cleanUrl,
-            TITLE: '1C Списки'
-        }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
-    }
-};
-
-const logic = {
-    fileCache: { dogovor: {}, spec: {}, order: {} },
-
-    extractFileIds: function(propValue) {
-        if (!propValue) return [];
-        if (typeof propValue === 'object') return Object.values(propValue);
-        return [propValue];
-    },
-
-    renderFiles: function(containerId, selectId, cacheKey, iblockId, fieldCode) {
-        const container = document.getElementById(containerId);
-        container.innerHTML = ''; 
-        const selectedValue = document.getElementById(selectId).value;
-        if (!selectedValue) return;
-
-        const fileIds = this.fileCache[cacheKey][selectedValue];
-        
-        if (fileIds && fileIds.length > 0) {
-            fileIds.forEach((fileId, index) => {
-                // ИСПРАВЛЕНИЕ: Передаем в field_id полный код (например, PROPERTY_309)
-                const link = `https://${app.domain}/bitrix/components/bitrix/lists.element.edit/show_file.php?ib=${iblockId}&id=${selectedValue}&field_id=${fieldCode}&file_id=${fileId}`;
-                
-                const btn = document.createElement('a');
-                btn.className = 'btn-file';
-                btn.href = link;
-                btn.target = '_blank';
-                btn.innerHTML = `📄 <span>Скачать (${index + 1})</span>`;
-                container.appendChild(btn);
-            });
-        }
-    },
-
-    loadDogovors: function() {
-        BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_DOGOVOR]
-        }, res => {
-            if(res.error()) return log("Err: " + res.error());
-            let html = '<option value="">Выберите договор</option>';
-            res.data().forEach(i => {
-                html += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.dogovor[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_DOGOVOR]);
-            });
-            document.getElementById('select-dogovor').innerHTML = html;
-        });
-    },
-
-    loadSpecs: function(parentId, selected = null) {
-        const el = document.getElementById('select-spec');
-        const elOrd = document.getElementById('select-order');
-        el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
-        elOrd.innerHTML = '<option>...</option>'; elOrd.disabled = true;
-        document.getElementById('files-spec').innerHTML = '';
-        document.getElementById('files-order').innerHTML = '';
-
-        if(!parentId) return;
-
-        BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
-            FILTER: { [CONFIG.PROPS.LINK_TO_DOGOVOR]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_SPEC]
-        }, res => {
-            el.innerHTML = '<option value="">Выберите спецификацию</option>';
-            res.data().forEach(i => {
-                el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.spec[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_SPEC]);
-            });
-            el.disabled = false;
+    <h3>Сканирование полей файлов...</h3>
+    <div id="log">Ждите...</div>
+    <script>
+        BX24.init(function() {
+            var html = "";
+            var ids = [55, 57, 59]; // ID ваших списков
             
-            if(selected) { 
-                el.value = selected; 
-                this.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, CONFIG.PROPS.FILE_SPEC);
-                this.loadOrders(selected, logic.savedOrder); 
-            }
-        });
-    },
-
-    loadOrders: function(parentId, selected = null) {
-        const el = document.getElementById('select-order');
-        el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
-        document.getElementById('files-order').innerHTML = '';
-
-        if(!parentId) return;
-
-        BX24.callMethod('lists.element.get', {
-            IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
-            FILTER: { [CONFIG.PROPS.LINK_TO_SPEC]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_ORDER]
-        }, res => {
-            el.innerHTML = '<option value="">Выберите заказ</option>';
-            res.data().forEach(i => {
-                el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.order[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_ORDER]);
-            });
-            el.disabled = false;
-            if(selected) {
-                el.value = selected;
-                this.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, CONFIG.PROPS.FILE_ORDER);
-            }
-        });
-    },
-    
-    savedOrder: null,
-
-    syncWithDeal: function() {
-        BX24.callMethod('crm.deal.get', { ID: app.dealId }, res => {
-            if(!res.data()) return;
-            const data = res.data();
-            const dogovorId = data[CONFIG.PROPS.DEAL_DOGOVOR];
-            const specId = data[CONFIG.PROPS.DEAL_SPEC];
-            this.savedOrder = data[CONFIG.PROPS.DEAL_ORDER];
-
-            if(dogovorId) {
-                const waiter = setInterval(() => {
-                    const el = document.getElementById('select-dogovor');
-                    if(el.options.length > 1) {
-                        clearInterval(waiter);
-                        el.value = dogovorId;
-                        this.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, CONFIG.PROPS.FILE_DOGOVOR);
-                        this.loadSpecs(dogovorId, specId);
+            BX24.callBatch({
+                list55: ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: 55 }],
+                list57: ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: 57 }],
+                list59: ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: 59 }]
+            }, function(res) {
+                // Функция поиска полей типа 'F' (File)
+                function findFiles(data, listName) {
+                    html += `<h3>Список ${listName}</h3>`;
+                    for (var key in data) {
+                        var f = data[key];
+                        // Ищем поля, похожие на файлы (PROPERTY_...)
+                        if (key.indexOf('PROPERTY_') === 0) {
+                             html += `<b>Имя:</b> ${f.NAME} <br>`;
+                             html += `<b>Код API (FIELD_ID):</b> ${f.FIELD_ID} <br>`;
+                             html += `<b>Настоящий ID:</b> ${f.ID} <br>`;
+                             html += `<b>ДЛЯ ССЫЛКИ НУЖНО:</b> PROPERTY_${f.ID} <br>`;
+                             html += `<hr>`;
+                        }
                     }
-                }, 100);
-            }
+                }
+
+                if(res.list55.data()) findFiles(res.list55.data(), "55 (Договоры)");
+                if(res.list57.data()) findFiles(res.list57.data(), "57 (Спецификации)");
+                if(res.list59.data()) findFiles(res.list59.data(), "59 (Заказы)");
+
+                document.getElementById('log').innerHTML = html;
+            });
         });
-    },
-
-    save: function() {
-        BX24.callMethod('crm.deal.update', {
-            ID: app.dealId,
-            FIELDS: {
-                [CONFIG.PROPS.DEAL_DOGOVOR]: document.getElementById('select-dogovor').value,
-                [CONFIG.PROPS.DEAL_SPEC]: document.getElementById('select-spec').value,
-                [CONFIG.PROPS.DEAL_ORDER]: document.getElementById('select-order').value
-            }
-        });
-    }
-};
-
-document.getElementById('select-dogovor').onchange = function() { 
-    logic.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, CONFIG.PROPS.FILE_DOGOVOR);
-    logic.loadSpecs(this.value); 
-    logic.save(); 
-};
-
-document.getElementById('select-spec').onchange = function() { 
-    logic.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, CONFIG.PROPS.FILE_SPEC);
-    logic.loadOrders(this.value); 
-    logic.save(); 
-};
-
-document.getElementById('select-order').onchange = function() { 
-    logic.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, CONFIG.PROPS.FILE_ORDER);
-    logic.save(); 
-};
-
-app.init();
-</script>
+    </script>
 </body>
 </html>
