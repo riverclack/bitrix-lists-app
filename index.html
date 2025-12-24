@@ -17,7 +17,7 @@
             box-sizing: border-box; outline: none; margin-bottom: 5px;
         }
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
-        .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; }
+        .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; align-items: center;}
         
         .btn-file {
             display: inline-flex; align-items: center; padding: 6px 12px;
@@ -40,8 +40,6 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
-        /* Log hidden by default */
-        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; display:none; }
     </style>
 </head>
 <body>
@@ -71,18 +69,9 @@
             <div id="files-order" class="file-list"></div>
         </div>
     </div>
-    
-    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
-function log(msg) {
-    console.log(msg);
-    // Uncomment to enable on-screen logging
-    // const el = document.getElementById('visual-log');
-    // if(el) el.innerHTML = `> ${msg}<br>` + el.innerHTML;
-}
-
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
@@ -93,10 +82,13 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // API codes to fetch file data
-        FILE_DOGOVOR: "PROPERTY_309",
-        FILE_SPEC: "PROPERTY_313",
-        FILE_ORDER: "PROPERTY_311"
+        // === ВАЖНО: ЧИСТОВЫЕ ID ДЛЯ ГЕНЕРАЦИИ ССЫЛОК ===
+        // Это те цифры, которые выдал сканер (309, 313, 311)
+        FILE_IDS: {
+            DOGOVOR: 309,
+            SPEC: 313,
+            ORDER: 311
+        }
     }
 };
 
@@ -157,66 +149,71 @@ const app = {
             HANDLER: cleanUrl,
             TITLE: '1C Списки'
         }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
-    },
-
-    // === KEY FUNCTION: Opens file using parent window context ===
-    openFile: function(fileId) {
-        // This handler works with standard file IDs
-        const path = '/bitrix/services/mobile/file.php?fileId=' + fileId;
-        // openPath executes the request in the parent Bitrix window, bypassing iframe cookie blocks
-        BX24.openPath(path);
     }
 };
 
 const logic = {
-    fileCache: { dogovor: {}, spec: {}, order: {} },
-
-    extractFileIds: function(propValue) {
-        if (!propValue) return [];
-        if (typeof propValue === 'object') return Object.values(propValue);
-        return [propValue];
-    },
-
-    renderFiles: function(containerId, selectId, cacheKey, iblockId) {
+    // ВАЖНО: Используем правильный метод Битрикса для получения ссылок
+    // Он возвращает готовые ссылки с токеном авторизации
+    fetchFileLinks: function(containerId, iblockId, elementId, fieldIdNumeric) {
         const container = document.getElementById(containerId);
-        container.innerHTML = ''; 
-        const selectedValue = document.getElementById(selectId).value;
-        if (!selectedValue) return;
+        container.innerHTML = '<i>Загрузка ссылок...</i>';
 
-        // 1. Link to List Element (opens in new window)
+        if (!elementId) {
+            container.innerHTML = '';
+            return;
+        }
+
+        // 1. Ссылка на саму карточку
         const itemLink = document.createElement('a');
-        itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${selectedValue}/`;
+        itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${elementId}/`;
         itemLink.target = "_blank";
         itemLink.className = "btn-link";
         itemLink.innerHTML = "Открыть карточку ↗"; 
         container.appendChild(itemLink);
 
-        const fileIds = this.fileCache[cacheKey][selectedValue];
-        
-        // 2. File Buttons
-        if (fileIds && fileIds.length > 0) {
-            fileIds.forEach((fileId, index) => {
-                const btn = document.createElement('div'); // Using div instead of 'a'
-                btn.className = 'btn-file';
-                btn.style.cursor = 'pointer';
-                // Click handler triggers the JS function
-                btn.onclick = function() { app.openFile(fileId); };
-                btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
-                container.appendChild(btn);
-            });
-        }
+        // 2. Запрос ссылок на файлы
+        BX24.callMethod('lists.element.get.file.url', {
+            IBLOCK_TYPE_ID: 'lists',
+            IBLOCK_ID: iblockId,
+            ELEMENT_ID: elementId,
+            FIELD_ID: fieldIdNumeric // ВАЖНО: Передаем число (309), а не строку PROPERTY_309
+        }, function(res) {
+            
+            // Убираем текст загрузки, оставляем ссылку на карточку
+            container.innerHTML = '';
+            container.appendChild(itemLink);
+
+            if(res.error()) {
+                console.error("File Error:", res.error());
+                return;
+            }
+
+            const urls = res.data(); 
+            // Битрикс возвращает массив ссылок
+            
+            if (urls && urls.length > 0) {
+                urls.forEach((url, index) => {
+                    const btn = document.createElement('a');
+                    btn.className = 'btn-file';
+                    btn.href = url; // Это готовая ссылка с токеном!
+                    btn.target = '_blank'; // Открываем в новой вкладке
+                    btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
+                    container.appendChild(btn);
+                });
+            }
+        });
     },
 
     loadDogovors: function() {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_DOGOVOR]
+            SELECT: ['ID', 'NAME'] // Файлы не нужны, запрашиваем ссылки отдельным методом
         }, res => {
-            if(res.error()) return log("Err: " + res.error());
+            if(res.error()) return console.error(res.error());
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => {
                 html += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.dogovor[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_DOGOVOR]);
             });
             document.getElementById('select-dogovor').innerHTML = html;
         });
@@ -235,18 +232,18 @@ const logic = {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
             FILTER: { [CONFIG.PROPS.LINK_TO_DOGOVOR]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_SPEC]
+            SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.spec[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_SPEC]);
             });
             el.disabled = false;
             
             if(selected) { 
                 el.value = selected; 
-                this.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC);
+                // Загружаем ссылки (передаем 313)
+                this.fetchFileLinks('files-spec', CONFIG.LISTS.SPEC, selected, CONFIG.PROPS.FILE_IDS.SPEC);
                 this.loadOrders(selected, logic.savedOrder); 
             }
         });
@@ -262,17 +259,17 @@ const logic = {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
             FILTER: { [CONFIG.PROPS.LINK_TO_SPEC]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_ORDER]
+            SELECT: ['ID', 'NAME']
         }, res => {
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.order[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_ORDER]);
             });
             el.disabled = false;
             if(selected) {
                 el.value = selected;
-                this.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER);
+                // Загружаем ссылки (передаем 311)
+                this.fetchFileLinks('files-order', CONFIG.LISTS.ORDER, selected, CONFIG.PROPS.FILE_IDS.ORDER);
             }
         });
     },
@@ -293,7 +290,8 @@ const logic = {
                     if(el.options.length > 1) {
                         clearInterval(waiter);
                         el.value = dogovorId;
-                        this.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR);
+                        // Загружаем ссылки (передаем 309)
+                        this.fetchFileLinks('files-dogovor', CONFIG.LISTS.DOGOVOR, dogovorId, CONFIG.PROPS.FILE_IDS.DOGOVOR);
                         this.loadSpecs(dogovorId, specId);
                     }
                 }, 100);
@@ -314,19 +312,19 @@ const logic = {
 };
 
 document.getElementById('select-dogovor').onchange = function() { 
-    logic.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR);
+    logic.fetchFileLinks('files-dogovor', CONFIG.LISTS.DOGOVOR, this.value, CONFIG.PROPS.FILE_IDS.DOGOVOR);
     logic.loadSpecs(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-spec').onchange = function() { 
-    logic.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC);
+    logic.fetchFileLinks('files-spec', CONFIG.LISTS.SPEC, this.value, CONFIG.PROPS.FILE_IDS.SPEC);
     logic.loadOrders(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-order').onchange = function() { 
-    logic.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER);
+    logic.fetchFileLinks('files-order', CONFIG.LISTS.ORDER, this.value, CONFIG.PROPS.FILE_IDS.ORDER);
     logic.save(); 
 };
 
