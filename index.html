@@ -32,11 +32,7 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
-        #visual-log { 
-            margin-top: 20px; padding: 10px; background: #000; color: #0f0; 
-            font-family: monospace; font-size: 10px; border-radius: 4px;
-            max-height: 200px; overflow-y: auto; word-break: break-all;
-        }
+        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -46,7 +42,6 @@
 
     <div id="install-screen" style="text-align:center; padding-top: 20px;">
         <h3>Приложение установлено</h3>
-        <p>Если вы видите этот экран внутри Сделки, значит ID не найден.</p>
         <button class="btn-install" onclick="app.install()">Обновить встройку</button>
     </div>
 
@@ -81,17 +76,20 @@ function log(msg) {
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
+        // Коды для связей (фильтрации)
         LINK_TO_DOGOVOR: "PROPERTY_PROPERTY_PARENT_DOGOVOR", 
         LINK_TO_SPEC: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", 
         
+        // Поля сделки
         DEAL_DOGOVOR: "UF_CRM_1766155842",
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // API-коды полей с файлами
-        FILE_CODE_DOGOVOR: "PROPERTY_309",
-        FILE_CODE_SPEC: "PROPERTY_313",
-        FILE_CODE_ORDER: "PROPERTY_311"
+        // === ИСПРАВЛЕННЫЕ КОДЫ ФАЙЛОВ ===
+        // Мы используем их и для получения данных, и для формирования ссылки
+        FILE_DOGOVOR: "PROPERTY_309",
+        FILE_SPEC: "PROPERTY_313",
+        FILE_ORDER: "PROPERTY_311"
     }
 };
 
@@ -99,9 +97,6 @@ const app = {
     dealId: 0,
     domain: null,
     started: false,
-    
-    // Сюда сохраним реальные числовые ID полей для ссылок
-    realFieldIds: { dogovor: null, spec: null, order: null },
 
     init: function() {
         const urlParams = new URLSearchParams(window.location.search);
@@ -112,10 +107,7 @@ const app = {
 
         let idFromUrl = urlParams.get('PLACEMENT_OPTIONS[ID]');
         if (!idFromUrl && urlParams.get('PLACEMENT_OPTIONS')) {
-            try { 
-                const opts = JSON.parse(urlParams.get('PLACEMENT_OPTIONS'));
-                if (opts.ID) idFromUrl = opts.ID;
-            } catch(e) {}
+            try { const opts = JSON.parse(urlParams.get('PLACEMENT_OPTIONS')); if (opts.ID) idFromUrl = opts.ID; } catch(e) {}
         }
 
         if (idFromUrl) {
@@ -124,11 +116,8 @@ const app = {
             BX24.init(() => {
                 this.domain = BX24.getAuth().domain; 
                 BX24.placement.info((info) => {
-                    if (info.placement === 'CRM_DEAL_DETAIL_TAB') {
-                        this.start(info.options.ID);
-                    } else {
-                        this.showInstall();
-                    }
+                    if (info.placement === 'CRM_DEAL_DETAIL_TAB') this.start(info.options.ID);
+                    else this.showInstall();
                 });
             });
             setTimeout(() => { if (!this.started) this.showInstall(); }, 2000);
@@ -139,20 +128,14 @@ const app = {
         if (this.started) return;
         this.started = true;
         this.dealId = id;
-        
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('main-screen').style.display = 'block';
         document.getElementById('deal-id-display').innerText = id;
-        
         BX24.fitWindow();
         
-        // 1. Узнаем реальные ID полей
-        logic.resolveFieldIds(() => {
-            // 2. Только после этого грузим данные
-            logic.loadDogovors();
-            logic.syncWithDeal();
-        });
+        logic.loadDogovors();
+        logic.syncWithDeal();
     },
 
     showInstall: function() {
@@ -167,61 +150,31 @@ const app = {
             PLACEMENT: 'CRM_DEAL_DETAIL_TAB',
             HANDLER: cleanUrl,
             TITLE: '1C Списки'
-        }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно! Обновите страницу."));
+        }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
     }
 };
 
 const logic = {
-    // Кэш для хранения ID файлов: { "elementID": ["fileId1", "fileId2"] }
     fileCache: { dogovor: {}, spec: {}, order: {} },
 
-    // Функция: находит настоящий числовой ID поля по его коду (PROPERTY_311 -> 1450)
-    resolveFieldIds: function(callback) {
-        log("Looking for Real Field IDs...");
-        
-        const batch = {
-            dogovor: ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR }],
-            spec:    ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC }],
-            order:   ['lists.field.get', { IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER }]
-        };
-
-        BX24.callBatch(batch, (res) => {
-            const findId = (fields, code) => {
-                // fields - это объект, перебираем его
-                const f = Object.values(fields).find(item => item.FIELD_ID === code);
-                return f ? f.ID : null;
-            };
-
-            if(res.dogovor.data()) app.realFieldIds.dogovor = findId(res.dogovor.data(), CONFIG.PROPS.FILE_CODE_DOGOVOR);
-            if(res.spec.data())    app.realFieldIds.spec    = findId(res.spec.data(),    CONFIG.PROPS.FILE_CODE_SPEC);
-            if(res.order.data())   app.realFieldIds.order   = findId(res.order.data(),   CONFIG.PROPS.FILE_CODE_ORDER);
-
-            log("REAL IDs Found: " + JSON.stringify(app.realFieldIds));
-            callback();
-        });
-    },
-
-    // Вытаскивает ID файлов из ответа битрикса
     extractFileIds: function(propValue) {
         if (!propValue) return [];
         if (typeof propValue === 'object') return Object.values(propValue);
         return [propValue];
     },
 
-    // Рисует кнопки
-    renderFiles: function(containerId, selectId, cacheKey, iblockId, realFieldId) {
+    renderFiles: function(containerId, selectId, cacheKey, iblockId, fieldCode) {
         const container = document.getElementById(containerId);
         container.innerHTML = ''; 
-        
         const selectedValue = document.getElementById(selectId).value;
         if (!selectedValue) return;
 
         const fileIds = this.fileCache[cacheKey][selectedValue];
-        // Важно: проверяем, что у нас есть ID файлов и мы нашли реальный ID поля
-        if (fileIds && fileIds.length > 0 && realFieldId) {
+        
+        if (fileIds && fileIds.length > 0) {
             fileIds.forEach((fileId, index) => {
-                // Генерируем ссылку вручную
-                const link = `https://${app.domain}/bitrix/components/bitrix/lists.element.edit/show_file.php?ib=${iblockId}&id=${selectedValue}&field_id=${realFieldId}&file_id=${fileId}`;
+                // ИСПРАВЛЕНИЕ: Передаем в field_id полный код (например, PROPERTY_309)
+                const link = `https://${app.domain}/bitrix/components/bitrix/lists.element.edit/show_file.php?ib=${iblockId}&id=${selectedValue}&field_id=${fieldCode}&file_id=${fileId}`;
                 
                 const btn = document.createElement('a');
                 btn.className = 'btn-file';
@@ -230,21 +183,19 @@ const logic = {
                 btn.innerHTML = `📄 <span>Скачать (${index + 1})</span>`;
                 container.appendChild(btn);
             });
-        } else if (fileIds && fileIds.length > 0 && !realFieldId) {
-            log("Error: Files exist but Real Field ID not found!");
         }
     },
 
     loadDogovors: function() {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_DOGOVOR]
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_DOGOVOR]
         }, res => {
             if(res.error()) return log("Err: " + res.error());
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => {
                 html += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.dogovor[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_DOGOVOR]);
+                this.fileCache.dogovor[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_DOGOVOR]);
             });
             document.getElementById('select-dogovor').innerHTML = html;
         });
@@ -263,18 +214,18 @@ const logic = {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.SPEC,
             FILTER: { [CONFIG.PROPS.LINK_TO_DOGOVOR]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_SPEC]
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_SPEC]
         }, res => {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.spec[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_SPEC]);
+                this.fileCache.spec[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_SPEC]);
             });
             el.disabled = false;
             
             if(selected) { 
                 el.value = selected; 
-                this.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, app.realFieldIds.spec);
+                this.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, CONFIG.PROPS.FILE_SPEC);
                 this.loadOrders(selected, logic.savedOrder); 
             }
         });
@@ -290,17 +241,17 @@ const logic = {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.ORDER,
             FILTER: { [CONFIG.PROPS.LINK_TO_SPEC]: parentId }, 
-            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_CODE_ORDER]
+            SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_ORDER]
         }, res => {
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => {
                 el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`;
-                this.fileCache.order[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_CODE_ORDER]);
+                this.fileCache.order[i.ID] = this.extractFileIds(i[CONFIG.PROPS.FILE_ORDER]);
             });
             el.disabled = false;
             if(selected) {
                 el.value = selected;
-                this.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, app.realFieldIds.order);
+                this.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, CONFIG.PROPS.FILE_ORDER);
             }
         });
     },
@@ -318,11 +269,10 @@ const logic = {
             if(dogovorId) {
                 const waiter = setInterval(() => {
                     const el = document.getElementById('select-dogovor');
-                    // Ждем пока загрузятся ID полей и список договоров
-                    if(el.options.length > 1 && app.realFieldIds.dogovor !== null) {
+                    if(el.options.length > 1) {
                         clearInterval(waiter);
                         el.value = dogovorId;
-                        this.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, app.realFieldIds.dogovor);
+                        this.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, CONFIG.PROPS.FILE_DOGOVOR);
                         this.loadSpecs(dogovorId, specId);
                     }
                 }, 100);
@@ -343,19 +293,19 @@ const logic = {
 };
 
 document.getElementById('select-dogovor').onchange = function() { 
-    logic.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, app.realFieldIds.dogovor);
+    logic.renderFiles('files-dogovor', 'select-dogovor', 'dogovor', CONFIG.LISTS.DOGOVOR, CONFIG.PROPS.FILE_DOGOVOR);
     logic.loadSpecs(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-spec').onchange = function() { 
-    logic.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, app.realFieldIds.spec);
+    logic.renderFiles('files-spec', 'select-spec', 'spec', CONFIG.LISTS.SPEC, CONFIG.PROPS.FILE_SPEC);
     logic.loadOrders(this.value); 
     logic.save(); 
 };
 
 document.getElementById('select-order').onchange = function() { 
-    logic.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, app.realFieldIds.order);
+    logic.renderFiles('files-order', 'select-order', 'order', CONFIG.LISTS.ORDER, CONFIG.PROPS.FILE_ORDER);
     logic.save(); 
 };
 
