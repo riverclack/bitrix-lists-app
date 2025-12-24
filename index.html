@@ -17,8 +17,7 @@
             box-sizing: border-box; outline: none; margin-bottom: 5px;
         }
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
-        
-        .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; align-items: center;}
+        .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; }
         
         .btn-file {
             display: inline-flex; align-items: center; padding: 6px 12px;
@@ -28,11 +27,12 @@
         }
         .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
         
-        .btn-link {
-            text-decoration: none; font-size: 16px; color: #888; margin-left: 5px;
-            padding: 4px; border-radius: 4px;
+        /* Добавил цвет для наглядности ссылок */
+        .btn-link { 
+            text-decoration: none; font-size: 14px; color: #2fc6f6; margin-left: 5px; 
+            padding: 4px 8px; border: 1px solid transparent; border-radius: 4px;
         }
-        .btn-link:hover { background: #f0f0f0; color: #2fc6f6; }
+        .btn-link:hover { background: #f0faff; border-color: #2fc6f6; }
 
         .btn-install {
             display: inline-block; padding: 12px 24px; background: #9dcf00; 
@@ -41,6 +41,7 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
+        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; }
     </style>
 </head>
 <body>
@@ -69,10 +70,18 @@
             <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
             <div id="files-order" class="file-list"></div>
         </div>
+        <div style="text-align: right; font-size: 11px; color: #999;">ID Сделки: <span id="deal-id-display">...</span></div>
     </div>
+    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
+function log(msg) {
+    console.log(msg);
+    const el = document.getElementById('visual-log');
+    el.innerHTML = `> ${msg}<br>` + el.innerHTML;
+}
+
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
@@ -83,7 +92,7 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // === ВАШИ ТОЧНЫЕ КОДЫ ИЗ СКАНЕРА ===
+        // Коды полей для ПОЛУЧЕНИЯ ID файлов
         FILE_DOGOVOR: "PROPERTY_309",
         FILE_SPEC: "PROPERTY_313",
         FILE_ORDER: "PROPERTY_311"
@@ -128,6 +137,7 @@ const app = {
         document.getElementById('ui-loader').style.display = 'none';
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('main-screen').style.display = 'block';
+        document.getElementById('deal-id-display').innerText = id;
         BX24.fitWindow();
         
         logic.loadDogovors();
@@ -165,27 +175,28 @@ const logic = {
         const selectedValue = document.getElementById(selectId).value;
         if (!selectedValue) return;
 
-        const fileIds = this.fileCache[cacheKey][selectedValue];
-        
-        // 1. Кнопка перехода к элементу списка (всегда полезно)
+        // 1. Ссылка на сам элемент списка (на всякий случай)
         const itemLink = document.createElement('a');
         itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${selectedValue}/`;
         itemLink.target = "_blank";
         itemLink.className = "btn-link";
-        itemLink.title = "Открыть карточку в списке";
-        itemLink.innerHTML = "🔗"; 
+        itemLink.innerHTML = "Открыть карточку ↗"; 
         container.appendChild(itemLink);
 
-        // 2. Файлы
+        const fileIds = this.fileCache[cacheKey][selectedValue];
+        
+        // 2. Ссылки на файлы
         if (fileIds && fileIds.length > 0) {
             fileIds.forEach((fileId, index) => {
-                // Универсальная ссылка на скачивание
-                const link = `https://${app.domain}/bitrix/tools/disk/uf.php?attachedId=${fileId}&action=download&ncc=1`;
+                // ИСПОЛЬЗУЕМ "ВСЕЯДНЫЙ" МОБИЛЬНЫЙ ЗАГРУЗЧИК
+                // Он работает с обычными ID файлов (не Disk Object)
+                const link = `https://${app.domain}/bitrix/services/mobile/file.php?fileId=${fileId}`;
                 
                 const btn = document.createElement('a');
                 btn.className = 'btn-file';
                 btn.href = link;
-                btn.innerHTML = `📄 <span>Скачать ${index + 1}</span>`;
+                // btn.target = '_blank'; // Мобильный загрузчик сам инициирует скачивание
+                btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
                 container.appendChild(btn);
             });
         }
@@ -196,7 +207,7 @@ const logic = {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
             SELECT: ['ID', 'NAME', CONFIG.PROPS.FILE_DOGOVOR]
         }, res => {
-            if(res.error()) return console.error(res.error());
+            if(res.error()) return log("Err: " + res.error());
             let html = '<option value="">Выберите договор</option>';
             res.data().forEach(i => {
                 html += `<option value="${i.ID}">${i.NAME}</option>`;
