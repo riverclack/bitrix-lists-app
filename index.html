@@ -6,21 +6,28 @@
     <title>1C Контроллер</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <style>
-        /* Стиль подстраиваем под узкое поле */
         body { margin: 0; padding: 0; background: transparent; font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
         
         #app { padding: 0; }
         
         .control-row {
-            display: flex; flex-direction: column; gap: 8px; margin-bottom: 5px;
+            margin-bottom: 8px;
         }
 
         .b24-label { 
             font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px;
         }
         
+        /* Группа: Селект + Ссылка */
+        .input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
         .b24-select {
-            display: block; width: 100%; height: 34px; padding: 0 8px;
+            flex-grow: 1; /* Селект занимает всё доступное место */
+            display: block; height: 34px; padding: 0 8px;
             font-size: 14px; color: #333; background: #fff;
             border: 1px solid #c6cdd3; border-radius: 2px;
             box-sizing: border-box; outline: none;
@@ -28,7 +35,18 @@
         .b24-select:focus { border-color: #2fc6f6; }
         .b24-select:disabled { background: #f4f4f4; color: #aaa; }
 
-        /* Кнопка установки (видна только при открытии напрямую) */
+        /* Кнопка-ссылка */
+        .btn-link {
+            display: none; /* Скрыта по умолчанию */
+            align-items: center; justify-content: center;
+            width: 34px; height: 34px;
+            border: 1px solid #c6cdd3; border-radius: 2px;
+            background: #fff; text-decoration: none;
+            color: #555; font-size: 16px;
+            transition: 0.2s;
+        }
+        .btn-link:hover { background: #f0f2f5; border-color: #b0b8c0; color: #2fc6f6; }
+
         .install-wrap { text-align: center; padding: 20px; }
         .btn-install {
             padding: 10px 20px; background: #2fc6f6; color: #fff; 
@@ -37,7 +55,6 @@
         
         #main-screen, #loader { display: none; }
         
-        /* Скрываем скроллбары */
         ::-webkit-scrollbar { width: 0px; background: transparent; }
     </style>
 </head>
@@ -46,10 +63,7 @@
 <div id="app">
     <div id="install-screen" class="install-wrap">
         <h3>Установка Поля</h3>
-        <p>Нажмите кнопку, чтобы зарегистрировать новый тип поля в CRM.</p>
         <button class="btn-install" onclick="app.install()">Установить "Пульт 1С"</button>
-        <br><br>
-        <small style="color:#999">После установки зайдите в Сделку -> Создать поле -> Выберите "Пульт 1С"</small>
     </div>
 
     <div id="loader" style="padding: 10px; color: #999; font-size: 12px;">Загрузка данных 1С...</div>
@@ -57,17 +71,26 @@
     <div id="main-screen">
         <div class="control-row">
             <div class="b24-label">Договор</div>
-            <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
+            <div class="input-group">
+                <select id="select-dogovor" class="b24-select"><option value="">Загрузка...</option></select>
+                <a id="link-dogovor" class="btn-link" target="_blank" title="Открыть в списке">🔗</a>
+            </div>
         </div>
 
         <div class="control-row">
             <div class="b24-label">Спецификация</div>
-            <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
+            <div class="input-group">
+                <select id="select-spec" class="b24-select" disabled><option value="">Сначала выберите договор</option></select>
+                <a id="link-spec" class="btn-link" target="_blank" title="Открыть в списке">🔗</a>
+            </div>
         </div>
 
         <div class="control-row">
             <div class="b24-label">Заказ Клиента</div>
-            <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
+            <div class="input-group">
+                <select id="select-order" class="b24-select" disabled><option value="">Сначала выберите спецификацию</option></select>
+                <a id="link-order" class="btn-link" target="_blank" title="Открыть в списке">🔗</a>
+            </div>
         </div>
     </div>
 </div>
@@ -79,28 +102,29 @@ const CONFIG = {
         LINK_TO_DOGOVOR: "PROPERTY_PROPERTY_PARENT_DOGOVOR", 
         LINK_TO_SPEC: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", 
         
-        // Поля в сделке, куда мы ПИШЕМ результат
         DEAL_DOGOVOR: "UF_CRM_1766155842",
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959"
     },
-    // Уникальный код нашего типа поля
     USER_TYPE_ID: 'riverclack_1c_v2' 
 };
 
 const app = {
     dealId: 0,
+    domain: null, // Храним домен портала
     
     init: function() {
-        // Проверяем, где мы находимся
+        // Определяем домен для ссылок
         const params = new URLSearchParams(window.location.search);
-        // Битрикс передает PLACEMENT_OPTIONS при открытии внутри поля
+        this.domain = params.get('DOMAIN');
+        if(!this.domain && document.referrer) {
+             try { this.domain = new URL(document.referrer).hostname; } catch(e){}
+        }
+
         const placementOptions = params.get('PLACEMENT_OPTIONS');
-        
         if (placementOptions) {
             try {
                 const options = JSON.parse(placementOptions);
-                // Если мы внутри поля, то ENTITY_ID - это ID сделки
                 if (options.ENTITY_ID) {
                     this.start(options.ENTITY_ID);
                     return;
@@ -108,13 +132,16 @@ const app = {
             } catch(e) { console.error(e); }
         }
 
-        // Если мы не в поле, показываем экран установки
+        // Если запустились через библиотеку, пробуем взять домен оттуда
+        BX24.init(() => {
+            if(!this.domain) this.domain = BX24.getAuth().domain;
+        });
+
         document.getElementById('install-screen').style.display = 'block';
     },
 
     install: function() {
-        const handlerUrl = window.location.href.split('?')[0]; // Текущий URL без параметров
-        
+        const handlerUrl = window.location.href.split('?')[0];
         BX24.callMethod('userfieldtype.add', {
             USER_TYPE_ID: CONFIG.USER_TYPE_ID,
             HANDLER: handlerUrl,
@@ -122,24 +149,20 @@ const app = {
             DESCRIPTION: 'Интерфейс выбора Договора, Спецификации и Заказа'
         }, res => {
             if(res.error()) alert('Ошибка: ' + res.error());
-            else alert('Успешно! Теперь зайдите в Сделку, нажмите "Создать поле" и выберите "Пульт 1С (Списки)".');
+            else alert('Успешно! Теперь добавьте поле в сделку.');
         });
     },
 
     start: function(id) {
-        // Скрываем установку, показываем интерфейс
         document.getElementById('install-screen').style.display = 'none';
         document.getElementById('loader').style.display = 'block';
-        
         this.dealId = id;
         
-        // Если это новая сделка (ID=0), мы не можем сохранять
         if (this.dealId == 0) {
             document.getElementById('loader').innerText = "Сначала сохраните сделку!";
             return;
         }
 
-        // Загружаем данные
         logic.loadDogovors();
         logic.syncWithDeal();
     }
@@ -148,7 +171,17 @@ const app = {
 const logic = {
     savedOrder: null,
 
-    // Загрузка договоров
+    // Функция обновления ссылки
+    updateLink: function(linkId, listId, recordId) {
+        const linkEl = document.getElementById(linkId);
+        if (recordId && app.domain) {
+            linkEl.href = `https://${app.domain}/company/lists/${listId}/element/0/${recordId}/`;
+            linkEl.style.display = 'flex';
+        } else {
+            linkEl.style.display = 'none';
+        }
+    },
+
     loadDogovors: function() {
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists', IBLOCK_ID: CONFIG.LISTS.DOGOVOR, 
@@ -157,8 +190,7 @@ const logic = {
             document.getElementById('loader').style.display = 'none';
             document.getElementById('main-screen').style.display = 'block';
             
-            // Подгоняем высоту фрейма под контент
-            // В режиме поля это очень важно
+            // Ресайз для отображения всего контента
             const height = document.body.scrollHeight + 20;
             BX24.placement.call('resizeWindow', { width: '100%', height: height });
 
@@ -168,15 +200,18 @@ const logic = {
         });
     },
 
-    // Загрузка спецификаций
     loadSpecs: function(parentId, selected = null) {
         const el = document.getElementById('select-spec');
         const elOrd = document.getElementById('select-order');
         el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
         elOrd.innerHTML = '<option>...</option>'; elOrd.disabled = true;
+        
+        // Скрываем ссылки при сбросе
+        logic.updateLink('link-spec', CONFIG.LISTS.SPEC, null);
+        logic.updateLink('link-order', CONFIG.LISTS.ORDER, null);
 
         if(!parentId) {
-             el.innerHTML = '<option value="">Выберите договор</option>';
+             el.innerHTML = '<option value="">Сначала выберите договор</option>';
              return;
         }
 
@@ -188,19 +223,23 @@ const logic = {
             el.innerHTML = '<option value="">Выберите спецификацию</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
+            
             if(selected) { 
                 el.value = selected; 
+                // Показываем ссылку для спецификации
+                logic.updateLink('link-spec', CONFIG.LISTS.SPEC, selected);
                 this.loadOrders(selected, logic.savedOrder); 
             }
         });
     },
 
-    // Загрузка заказов
     loadOrders: function(parentId, selected = null) {
         const el = document.getElementById('select-order');
         el.innerHTML = '<option>Загрузка...</option>'; el.disabled = true;
+        logic.updateLink('link-order', CONFIG.LISTS.ORDER, null);
+
         if(!parentId) {
-            el.innerHTML = '<option value="">Выберите спецификацию</option>';
+            el.innerHTML = '<option value="">Сначала выберите спецификацию</option>';
             return;
         }
 
@@ -212,11 +251,14 @@ const logic = {
             el.innerHTML = '<option value="">Выберите заказ</option>';
             res.data().forEach(i => el.innerHTML += `<option value="${i.ID}">${i.NAME}</option>`);
             el.disabled = false;
-            if(selected) el.value = selected;
+            if(selected) {
+                el.value = selected;
+                // Показываем ссылку для заказа
+                logic.updateLink('link-order', CONFIG.LISTS.ORDER, selected);
+            }
         });
     },
 
-    // Получаем текущие значения из Сделки
     syncWithDeal: function() {
         BX24.callMethod('crm.deal.get', { ID: app.dealId }, res => {
             if(!res.data()) return;
@@ -231,6 +273,8 @@ const logic = {
                     if(el.options.length > 1) {
                         clearInterval(waiter);
                         el.value = dogovorId;
+                        // Показываем ссылку для договора
+                        logic.updateLink('link-dogovor', CONFIG.LISTS.DOGOVOR, dogovorId);
                         this.loadSpecs(dogovorId, specId);
                     }
                 }, 100);
@@ -238,9 +282,7 @@ const logic = {
         });
     },
 
-    // Сохранение в сделку
     save: function() {
-        // Мы сохраняем данные не в "себя" (текущее поле), а в соседние поля
         BX24.callMethod('crm.deal.update', {
             ID: app.dealId,
             FIELDS: {
@@ -248,18 +290,26 @@ const logic = {
                 [CONFIG.PROPS.DEAL_SPEC]: document.getElementById('select-spec').value,
                 [CONFIG.PROPS.DEAL_ORDER]: document.getElementById('select-order').value
             }
-        }, () => {
-            // Опционально: можно показать зеленую галочку, что сохранено
         });
     }
 };
 
 // События
-document.getElementById('select-dogovor').onchange = function() { logic.loadSpecs(this.value); logic.save(); };
-document.getElementById('select-spec').onchange = function() { logic.loadOrders(this.value); logic.save(); };
-document.getElementById('select-order').onchange = function() { logic.save(); };
+document.getElementById('select-dogovor').onchange = function() { 
+    logic.updateLink('link-dogovor', CONFIG.LISTS.DOGOVOR, this.value);
+    logic.loadSpecs(this.value); 
+    logic.save(); 
+};
+document.getElementById('select-spec').onchange = function() { 
+    logic.updateLink('link-spec', CONFIG.LISTS.SPEC, this.value);
+    logic.loadOrders(this.value); 
+    logic.save(); 
+};
+document.getElementById('select-order').onchange = function() { 
+    logic.updateLink('link-order', CONFIG.LISTS.ORDER, this.value);
+    logic.save(); 
+};
 
-// Старт
 app.init();
 </script>
 </body>
