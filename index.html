@@ -3,423 +3,376 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Умные Списки 1С</title>
+    <title>Конструктор Списков 1С</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <style>
         body { margin: 0; padding: 0; background: #fff; font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        /* === СТИЛИ ДЛЯ РЕЖИМА ПОЛЯ (ВСТРОЙКА) === */
-        .field-mode { background: transparent; overflow: hidden; padding: 0; }
-        .field-mode .control-row { margin-bottom: 8px; }
-        .field-mode .b24-label { font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
-        .field-mode .input-group { display: flex; align-items: center; gap: 5px; }
-        .field-mode .b24-select {
+        /* === ЭКРАН ПОЛЯ (ВНУТРИ СДЕЛКИ) === */
+        #field-screen { background: transparent; overflow: hidden; padding: 0; display: none; }
+        .control-row { margin-bottom: 8px; }
+        .b24-label { font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
+        .input-group { display: flex; align-items: center; gap: 5px; }
+        .b24-select {
             flex-grow: 1; height: 34px; padding: 0 8px; font-size: 14px; color: #333; background: #fff;
             border: 1px solid #c6cdd3; border-radius: 2px; box-sizing: border-box; outline: none;
         }
-        .field-mode .b24-select:focus { border-color: #2fc6f6; }
-        .field-mode .b24-select:disabled { background: #f4f4f4; color: #aaa; }
-        .field-mode .btn-link {
+        .b24-select:focus { border-color: #2fc6f6; }
+        .b24-select:disabled { background: #f4f4f4; color: #aaa; }
+        .btn-link {
             display: none; align-items: center; justify-content: center;
             width: 34px; height: 34px; border: 1px solid #c6cdd3; border-radius: 2px;
             background: #fff; text-decoration: none; color: #555; font-size: 16px;
         }
-        .field-mode .btn-link:hover { background: #f0f2f5; color: #2fc6f6; }
+        .btn-link:hover { background: #f0f2f5; color: #2fc6f6; }
 
-        /* === СТИЛИ ДЛЯ РЕЖИМА НАСТРОЕК === */
-        .settings-mode { max-width: 800px; margin: 0 auto; padding: 20px; }
-        .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 20px; margin-bottom: 20px; }
-        h2 { margin-top: 0; color: #333; font-size: 18px; }
-        .form-group { margin-bottom: 15px; }
-        .form-label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #535c69; }
-        .form-input, .form-select { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #c6cdd3; border-radius: 3px; box-sizing: border-box; }
+        /* === ЭКРАН НАСТРОЕК (АДМИНКА) === */
+        #settings-screen { max-width: 900px; margin: 0 auto; padding: 20px; display: none; }
+        .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 30px; }
         
+        h2 { margin-top: 0; margin-bottom: 20px; color: #333; }
+        .help-text { background: #f8f9fa; padding: 15px; border-radius: 4px; margin-bottom: 20px; color: #555; font-size: 13px; line-height: 1.5; border-left: 4px solid #2fc6f6; }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-label { display: block; margin-bottom: 8px; font-weight: bold; font-size: 13px; color: #333; }
+        .form-input { width: 100%; max-width: 400px; height: 36px; padding: 0 10px; border: 1px solid #c6cdd3; border-radius: 3px; }
+
         /* Таблица уровней */
-        .levels-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        .levels-table th { text-align: left; font-size: 12px; color: #999; padding: 5px; border-bottom: 1px solid #eee; }
-        .levels-table td { padding: 5px; vertical-align: top; }
-        .levels-table input { width: 100%; height: 32px; border: 1px solid #ddd; padding: 0 5px; box-sizing: border-box; }
+        table.config-table { width: 100%; border-collapse: collapse; }
+        table.config-table th { text-align: left; background: #f0f2f5; padding: 10px; font-size: 12px; color: #535c69; border-bottom: 2px solid #ddd; }
+        table.config-table td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+        table.config-table input { width: 100%; box-sizing: border-box; height: 34px; border: 1px solid #c6cdd3; border-radius: 3px; padding: 0 8px; }
         
         .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 14px; transition: 0.2s; }
         .btn-primary { background: #2fc6f6; color: #fff; }
         .btn-primary:hover { background: #1db5e5; }
-        .btn-add { background: #bbed21; color: #535c69; font-size: 12px; padding: 5px 10px; }
-        .btn-del { background: #ff5752; color: #fff; width: 30px; height: 32px; display: flex; align-items: center; justify-content: center; }
+        .btn-success { background: #9dcf00; color: #fff; margin-top: 20px; }
+        .btn-add { background: #eef2f4; color: #333; border: 1px solid #c6cdd3; margin-top: 10px; font-size: 12px; }
+        .btn-del { background: #ff5752; color: #fff; width: 30px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; }
 
-        #screens > div { display: none; }
+        #loader-screen { display: flex; justify-content: center; align-items: center; height: 100vh; color: #888; }
     </style>
 </head>
 <body>
 
-<div id="screens">
-    
-    <div id="loader-screen" style="display:block; text-align:center; padding-top: 50px; color: #888;">
-        Загрузка конфигурации...
-    </div>
+<div id="loader-screen">Инициализация приложения...</div>
 
-    <div id="settings-screen" class="settings-mode">
-        <div class="settings-card">
-            <h2>Настройка приложения</h2>
-            <p style="font-size: 13px; color: #888;">Здесь вы настраиваете связь списков 1С и полей CRM.</p>
-            
-            <div class="form-group">
-                <label class="form-label">Название поля в CRM</label>
-                <input type="text" id="conf-title" class="form-input" value="1С Пульт">
-            </div>
+<div id="settings-screen">
+    <div class="settings-card">
+        <h2>⚙️ Настройка зависимых полей</h2>
+        
+        <div class="help-text">
+            <b>Как это работает:</b><br>
+            1. Заполните настройки ниже (названия полей, ID списков).<br>
+            2. Нажмите "Сохранить и Зарегистрировать поле".<br>
+            3. Перейдите в CRM (Сделка), нажмите "Создать поле" и выберите ваш новый тип поля.
+        </div>
 
-            <div class="form-group">
-                <label class="form-label">Сущность CRM</label>
-                <select id="conf-entity" class="form-select">
-                    <option value="CRM_DEAL">Сделка (CRM_DEAL)</option>
-                    <option value="CRM_LEAD">Лид (CRM_LEAD)</option>
-                    <option value="CRM_COMPANY">Компания (CRM_COMPANY)</option>
-                    <option value="CRM_CONTACT">Контакт (CRM_CONTACT)</option>
-                    </select>
-            </div>
+        <div class="form-group">
+            <label class="form-label">1. Название типа поля (как оно будет в списке полей CRM)</label>
+            <input type="text" id="conf-title" class="form-input" value="1С Связанные списки">
+        </div>
 
-            <div class="form-group">
-                <label class="form-label">Цепочка зависимых списков</label>
-                <table class="levels-table">
-                    <thead>
-                        <tr>
-                            <th width="5%">#</th>
-                            <th width="20%">Название уровня</th>
-                            <th width="15%">ID Списка</th>
-                            <th width="25%">Код поля связи (в списке)</th>
-                            <th width="25%">Код поля CRM (куда писать)</th>
-                            <th width="10%"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="levels-container">
-                        </tbody>
-                </table>
-                <br>
-                <button class="btn btn-add" onclick="settings.addLevelRow()">+ Добавить уровень</button>
-            </div>
+        <div class="form-group">
+            <label class="form-label">2. Конфигурация уровней</label>
+            <table class="config-table">
+                <thead>
+                    <tr>
+                        <th width="5%">#</th>
+                        <th width="20%">Название (Label)</th>
+                        <th width="10%">ID Списка</th>
+                        <th width="25%">Код связи (в Списке)</th>
+                        <th width="25%">Код поля CRM (Куда писать)</th>
+                        <th width="5%"></th>
+                    </tr>
+                </thead>
+                <tbody id="levels-container"></tbody>
+            </table>
+            <button class="btn btn-add" onclick="Settings.addRow()">+ Добавить уровень</button>
+        </div>
 
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            
-            <button class="btn btn-primary" onclick="settings.saveAndInstall()">Сохранить настройки и Установить поле</button>
-            <span id="save-status" style="margin-left: 10px; color: green; font-weight: bold;"></span>
+        <div class="form-group">
+            <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить и Обновить поле</button>
+            <span id="save-msg" style="margin-left:15px; font-weight:bold;"></span>
         </div>
     </div>
+</div>
 
-    <div id="field-screen" class="field-mode">
-        <div id="dynamic-controls"></div>
-        <div style="text-align: center; color: #999; margin-top: 20px;" id="field-loader">Инициализация...</div>
-    </div>
-
+<div id="field-screen">
+    <div id="dynamic-fields"></div>
+    <div id="field-msg" style="color:#999; text-align:center; padding:10px;">Загрузка...</div>
 </div>
 
 <script>
-// --- ГЛОБАЛЬНЫЙ ОБЪЕКТ ПРИЛОЖЕНИЯ ---
+// --- ЯДРО ПРИЛОЖЕНИЯ ---
 const App = {
     config: null,
     domain: null,
-    
+    placement: null,
+
     init: function() {
-        // Определяем домен (важно для ссылок)
-        const params = new URLSearchParams(window.location.search);
-        this.domain = params.get('DOMAIN');
-        if(!this.domain && document.referrer) {
-             try { this.domain = new URL(document.referrer).hostname; } catch(e){}
-        }
-
         BX24.init(() => {
-            if(!this.domain) this.domain = BX24.getAuth().domain;
+            this.domain = BX24.getAuth().domain;
             
-            // Загружаем сохраненные настройки
-            BX24.callMethod('app.option.get', { option: 'riverclack_config' }, (res) => {
-                if(res.data()) {
-                    this.config = res.data();
-                } else {
-                    // Дефолтные настройки (пример)
-                    this.config = {
-                        title: "1С Пульт",
-                        entity: "CRM_DEAL",
-                        levels: [
-                            { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" },
-                            { name: "Спецификация", listId: "57", linkProp: "PROPERTY_PROPERTY_PARENT_DOGOVOR", crmField: "UF_CRM_1766155890" },
-                            { name: "Заказ", listId: "59", linkProp: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", crmField: "UF_CRM_1766155959" }
-                        ]
-                    };
-                }
-
-                this.route();
+            // 1. Узнаем, где мы находимся (Встройка или Админка?)
+            BX24.placement.info((info) => {
+                this.placement = info.placement;
+                
+                // 2. Загружаем сохраненные настройки
+                BX24.callMethod('app.option.get', { option: 'riverclack_config_v2' }, (res) => {
+                    this.config = res.data() || this.getDefaultConfig();
+                    
+                    if (this.placement === 'USERFIELD_TYPE') {
+                        // Мы внутри поля в CRM
+                        this.renderFieldMode(info.options);
+                    } else {
+                        // Мы в меню приложений (Админка)
+                        this.renderSettingsMode();
+                    }
+                });
             });
         });
     },
 
-    // Маршрутизация: Поле или Настройки?
-    route: function() {
-        const params = new URLSearchParams(window.location.search);
-        const placementOptions = params.get('PLACEMENT_OPTIONS');
-        
+    getDefaultConfig: function() {
+        return {
+            title: "1С Связанные Списки",
+            levels: [
+                { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" },
+                { name: "Спецификация", listId: "57", linkProp: "PROPERTY_PROPERTY_PARENT_DOGOVOR", crmField: "UF_CRM_1766155890" },
+                { name: "Заказ", listId: "59", linkProp: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", crmField: "UF_CRM_1766155959" }
+            ]
+        };
+    },
+
+    // --- РЕЖИМ НАСТРОЕК ---
+    renderSettingsMode: function() {
         document.getElementById('loader-screen').style.display = 'none';
-
-        if (placementOptions) {
-            // МЫ ВНУТРИ ПОЛЯ
-            try {
-                const options = JSON.parse(placementOptions);
-                document.getElementById('field-screen').style.display = 'block';
-                FieldLogic.start(options.ENTITY_ID);
-            } catch(e) { console.error(e); }
-        } else {
-            // МЫ В АДМИНКЕ
-            document.getElementById('settings-screen').style.display = 'block';
-            SettingsLogic.renderForm();
-        }
-    }
-};
-
-// --- ЛОГИКА НАСТРОЕК ---
-const SettingsLogic = {
-    renderForm: function() {
-        document.getElementById('conf-title').value = App.config.title || "1C Пульт";
-        document.getElementById('conf-entity').value = App.config.entity || "CRM_DEAL";
+        document.getElementById('settings-screen').style.display = 'block';
         
+        document.getElementById('conf-title').value = this.config.title;
         const container = document.getElementById('levels-container');
         container.innerHTML = '';
         
-        (App.config.levels || []).forEach(lvl => {
-            this.addLevelRow(lvl);
-        });
+        this.config.levels.forEach(lvl => Settings.addRow(lvl));
     },
 
-    addLevelRow: function(data = {}) {
+    // --- РЕЖИМ ПОЛЯ ---
+    renderFieldMode: function(options) {
+        document.getElementById('loader-screen').style.display = 'none';
+        document.getElementById('field-screen').style.display = 'block';
+        
+        // Запускаем логику полей с переданным ID сущности
+        FieldLogic.start(options.ENTITY_ID);
+    }
+};
+
+// --- ЛОГИКА НАСТРОЕК (ADMIN) ---
+const Settings = {
+    addRow: function(data = {}) {
         const container = document.getElementById('levels-container');
-        const index = container.children.length;
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>${index + 1}</td>
-            <td><input type="text" class="lvl-name" value="${data.name || ''}" placeholder="Напр. Договор"></td>
-            <td><input type="text" class="lvl-list" value="${data.listId || ''}" placeholder="ID (55)"></td>
-            <td><input type="text" class="lvl-link" value="${data.linkProp || ''}" placeholder="${index===0 ? '---' : 'PROPERTY_...'}"></td>
-            <td><input type="text" class="lvl-crm" value="${data.crmField || ''}" placeholder="UF_CRM_..."></td>
+            <td>${container.children.length + 1}</td>
+            <td><input type="text" class="inp-name" value="${data.name || ''}" placeholder="Название"></td>
+            <td><input type="text" class="inp-list" value="${data.listId || ''}" placeholder="55"></td>
+            <td><input type="text" class="inp-link" value="${data.linkProp || ''}" placeholder="Код связи"></td>
+            <td><input type="text" class="inp-crm" value="${data.crmField || ''}" placeholder="UF_CRM_..."></td>
             <td><button class="btn btn-del" onclick="this.closest('tr').remove()">×</button></td>
         `;
         container.appendChild(tr);
     },
 
-    saveAndInstall: function() {
-        const btn = document.querySelector('.btn-primary');
-        const status = document.getElementById('save-status');
-        btn.disabled = true;
-        status.innerText = "Сохранение...";
+    save: function() {
+        const msg = document.getElementById('save-msg');
+        msg.innerText = "Сохранение...";
+        msg.style.color = "blue";
 
-        // 1. Собираем данные
+        // Собираем конфиг из таблицы
         const newConfig = {
             title: document.getElementById('conf-title').value,
-            entity: document.getElementById('conf-entity').value,
             levels: []
         };
 
         document.querySelectorAll('#levels-container tr').forEach(tr => {
             newConfig.levels.push({
-                name: tr.querySelector('.lvl-name').value,
-                listId: tr.querySelector('.lvl-list').value,
-                linkProp: tr.querySelector('.lvl-link').value,
-                crmField: tr.querySelector('.lvl-crm').value
+                name: tr.querySelector('.inp-name').value,
+                listId: tr.querySelector('.inp-list').value,
+                linkProp: tr.querySelector('.inp-link').value,
+                crmField: tr.querySelector('.inp-crm').value
             });
         });
 
-        // 2. Сохраняем в AppOption
-        BX24.callMethod('app.option.set', { options: { riverclack_config: newConfig } }, () => {
-            // 3. Регистрируем тип поля
+        // 1. Сохраняем в базу приложения
+        BX24.callMethod('app.option.set', { options: { riverclack_config_v2: newConfig } }, () => {
+            
+            // 2. Регистрируем обработчик поля
             const handlerUrl = window.location.href.split('?')[0];
+            
             BX24.callMethod('userfieldtype.add', {
-                USER_TYPE_ID: 'riverclack_dynamic_v1', // Уникальный ID типа поля
+                USER_TYPE_ID: 'riverclack_lists_pro', // Уникальный ID типа поля
                 HANDLER: handlerUrl,
                 TITLE: newConfig.title,
-                DESCRIPTION: 'Динамические списки 1С'
+                DESCRIPTION: 'Настраиваемые зависимые списки'
             }, (res) => {
-                btn.disabled = false;
-                if(res.error()) {
-                    alert("Ошибка регистрации поля: " + res.error());
-                    status.innerText = "Ошибка!";
+                if (res.error()) {
+                    msg.innerText = "Ошибка регистрации: " + res.error();
+                    msg.style.color = "red";
                 } else {
-                    alert("Настройки сохранены! Поле обновлено.");
-                    status.innerText = "Успешно!";
-                    // Обновляем локальный конфиг
-                    App.config = newConfig;
+                    msg.innerText = "✅ Настройки сохранены! Поле готово к использованию.";
+                    msg.style.color = "green";
                 }
             });
         });
     }
 };
 
-// --- ЛОГИКА ПОЛЯ (RUNTIME) ---
+// --- ЛОГИКА РАБОТЫ В CRM (USER) ---
 const FieldLogic = {
-    dealId: 0,
-    levels: [], // Здесь будет копия уровней из конфига
+    entityId: 0,
+    levels: [],
 
     start: function(id) {
-        this.dealId = id;
-        this.levels = App.config.levels;
+        this.entityId = id;
+        this.levels = App.config.levels; // Берем структуру из конфига
         
-        // 1. Генерируем HTML для уровней
-        const container = document.getElementById('dynamic-controls');
+        // 1. Строим HTML
+        const container = document.getElementById('dynamic-fields');
         container.innerHTML = '';
-
+        
         this.levels.forEach((lvl, idx) => {
             const row = document.createElement('div');
             row.className = 'control-row';
             row.innerHTML = `
                 <div class="b24-label">${lvl.name}</div>
                 <div class="input-group">
-                    <select id="select-lvl-${idx}" class="b24-select" disabled>
-                        <option value="">Загрузка...</option>
-                    </select>
-                    <a id="link-lvl-${idx}" class="btn-link" target="_blank" title="Открыть в списке">🔗</a>
+                    <select id="sel-${idx}" class="b24-select" disabled><option>Загрузка...</option></select>
+                    <a id="link-${idx}" class="btn-link" target="_blank" title="Открыть">🔗</a>
                 </div>
             `;
             container.appendChild(row);
-
-            // Вешаем событие изменения
-            document.getElementById(`select-lvl-${idx}`).onchange = () => {
-                this.onChangeLevel(idx);
-            };
+            
+            // Событие
+            document.getElementById(`sel-${idx}`).onchange = () => this.onChange(idx);
         });
 
-        // 2. Если сделка новая, ждем
-        if(this.dealId == 0) {
-            document.getElementById('field-loader').innerText = "Сохраните сущность для работы.";
+        document.getElementById('field-msg').style.display = 'none';
+
+        if (this.entityId == 0) {
+            document.getElementById('field-msg').style.display = 'block';
+            document.getElementById('field-msg').innerText = "Сохраните сделку для работы";
             return;
         }
 
-        document.getElementById('field-loader').style.display = 'none';
-        
-        // 3. Загружаем данные
-        // Получаем текущие значения полей из CRM
-        this.syncWithEntity();
+        // 2. Синхронизация и загрузка
+        this.sync();
     },
 
-    syncWithEntity: function() {
-        // Какие поля нам нужно достать из сделки?
-        const selectFields = this.levels.map(l => l.crmField);
-        
-        // Запрос к CRM (используем динамический метод crm.item.get или crm.deal.get)
-        // Для упрощения пока берем crm.deal.get, но можно адаптировать под entity
-        const method = App.config.entity === 'CRM_LEAD' ? 'crm.lead.get' : 'crm.deal.get';
-
-        BX24.callMethod(method, { ID: this.dealId }, res => {
+    sync: function() {
+        // Получаем текущие значения из полей сделки
+        BX24.callMethod('crm.deal.get', { ID: this.entityId }, res => {
             if(!res.data()) return;
             const data = res.data();
             
-            // Сохраняем текущие значения в память уровней
+            // Запоминаем текущие значения
             this.levels.forEach(lvl => {
-                lvl.currentValue = data[lvl.crmField];
+                lvl.val = data[lvl.crmField];
             });
 
-            // Запускаем цепочку загрузки с 0-го уровня
+            // Начинаем каскадную загрузку с первого уровня
             this.loadLevel(0, null);
         });
     },
 
-    loadLevel: function(levelIdx, parentValue) {
-        if(levelIdx >= this.levels.length) return;
+    loadLevel: function(idx, parentVal) {
+        if(idx >= this.levels.length) return;
 
-        const lvl = this.levels[levelIdx];
-        const el = document.getElementById(`select-lvl-${levelIdx}`);
-        const link = document.getElementById(`link-lvl-${levelIdx}`);
+        const lvl = this.levels[idx];
+        const el = document.getElementById(`sel-${idx}`);
+        const link = document.getElementById(`link-${idx}`);
 
-        // Очистка и блокировка всех уровней ниже текущего
-        for(let i = levelIdx; i < this.levels.length; i++) {
-            const nextEl = document.getElementById(`select-lvl-${i}`);
-            nextEl.innerHTML = '<option value="">' + (i === levelIdx ? 'Загрузка...' : '...') + '</option>';
+        // Очистка нижних уровней
+        for(let i = idx; i < this.levels.length; i++) {
+            const nextEl = document.getElementById(`sel-${i}`);
+            nextEl.innerHTML = '<option value="">' + (i === idx ? 'Загрузка...' : '...') + '</option>';
             nextEl.disabled = true;
-            document.getElementById(`link-lvl-${i}`).style.display = 'none';
+            document.getElementById(`link-${i}`).style.display = 'none';
         }
 
-        // Формируем фильтр
+        // Фильтр
         const filter = {};
-        if (levelIdx > 0) {
-            if (!parentValue) {
+        if (idx > 0) {
+            if (!parentVal) {
                 el.innerHTML = '<option value="">Выберите значение выше</option>';
-                return; 
+                return;
             }
-            // Используем свойство связи, заданное в конфиге
-            filter[lvl.linkProp] = parentValue;
+            filter[lvl.linkProp] = parentVal;
         }
 
-        // Запрос к спискам
+        // Запрос к списку
         BX24.callMethod('lists.element.get', {
             IBLOCK_TYPE_ID: 'lists',
             IBLOCK_ID: lvl.listId,
             FILTER: filter,
             SELECT: ['ID', 'NAME']
         }, res => {
-            el.innerHTML = '<option value="">Выберите...</option>';
-            
+            el.innerHTML = '<option value="">Не выбрано</option>';
             if(res.data()) {
                 res.data().forEach(item => {
                     el.innerHTML += `<option value="${item.ID}">${item.NAME}</option>`;
                 });
             }
-            
             el.disabled = false;
 
-            // Восстанавливаем значение, если оно было сохранено в сделке
-            if (lvl.currentValue) {
-                // Проверяем, есть ли такое значение в списке (важно при смене родителя)
-                const exists = [...el.options].some(o => o.value == lvl.currentValue);
+            // Восстановление значения
+            if (lvl.val) {
+                const exists = [...el.options].some(o => o.value == lvl.val);
                 if (exists) {
-                    el.value = lvl.currentValue;
-                    this.updateLink(levelIdx, lvl.currentValue);
-                    // Рекурсивно грузим следующий уровень
-                    this.loadLevel(levelIdx + 1, lvl.currentValue);
+                    el.value = lvl.val;
+                    this.updateLink(idx, lvl.val);
+                    // Грузим следующий уровень
+                    this.loadLevel(idx + 1, lvl.val);
                 } else {
-                    // Если значение не подходит под фильтр (например, сменили договор), сбрасываем
-                    lvl.currentValue = null; 
+                    lvl.val = null; // Сброс, если значение не подходит по фильтру
                 }
             }
             
-            // Авто-ресайз окна
-            const height = document.body.scrollHeight + 20;
-            BX24.placement.call('resizeWindow', { width: '100%', height: height });
+            // Ресайз окна фрейма
+            const h = document.body.scrollHeight;
+            BX24.placement.call('resizeWindow', { width: '100%', height: h + 20 });
         });
     },
 
-    onChangeLevel: function(levelIdx) {
-        const el = document.getElementById(`select-lvl-${levelIdx}`);
-        const val = el.value;
-        const lvl = this.levels[levelIdx];
+    onChange: function(idx) {
+        const val = document.getElementById(`sel-${idx}`).value;
+        const lvl = this.levels[idx];
+        
+        this.updateLink(idx, val);
+        
+        // Сохраняем в CRM
+        BX24.callMethod('crm.deal.update', {
+            ID: this.entityId,
+            FIELDS: { [lvl.crmField]: val }
+        });
 
-        // 1. Обновляем ссылку
-        this.updateLink(levelIdx, val);
-
-        // 2. Сохраняем в CRM
-        this.saveToCRM(lvl.crmField, val);
-
-        // 3. Грузим следующий уровень
-        if (levelIdx + 1 < this.levels.length) {
-            this.loadLevel(levelIdx + 1, val);
+        // Перезагружаем нижний уровень
+        if (idx + 1 < this.levels.length) {
+            this.loadLevel(idx + 1, val);
         }
     },
 
-    updateLink: function(levelIdx, recordId) {
-        const lvl = this.levels[levelIdx];
-        const linkEl = document.getElementById(`link-lvl-${levelIdx}`);
-        
-        if (recordId && App.domain) {
-            linkEl.href = `https://${App.domain}/company/lists/${lvl.listId}/element/0/${recordId}/`;
-            linkEl.style.display = 'flex';
+    updateLink: function(idx, recId) {
+        const link = document.getElementById(`link-${idx}`);
+        const listId = this.levels[idx].listId;
+        if(recId && App.domain) {
+            link.href = `https://${App.domain}/company/lists/${listId}/element/0/${recId}/`;
+            link.style.display = 'flex';
         } else {
-            linkEl.style.display = 'none';
+            link.style.display = 'none';
         }
-    },
-
-    saveToCRM: function(fieldCode, value) {
-        const method = App.config.entity === 'CRM_LEAD' ? 'crm.lead.update' : 'crm.deal.update';
-        
-        BX24.callMethod(method, {
-            ID: this.dealId,
-            FIELDS: { [fieldCode]: value }
-        });
     }
 };
 
-// Запуск
 App.init();
 </script>
 </body>
