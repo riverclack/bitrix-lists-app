@@ -19,7 +19,7 @@
         .b24-select:disabled { background: #f9fafb; color: #aaa; cursor: not-allowed; }
         .file-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; min-height: 0; align-items: center;}
         
-        /* Стиль кнопки (теперь это div, имитирующий кнопку) */
+        /* Кнопка файла - стили */
         .btn-file {
             display: inline-flex; align-items: center; padding: 6px 12px;
             background: #f0f2f5; border: 1px solid #c6cdd3; border-radius: 15px;
@@ -27,7 +27,7 @@
             transition: 0.2s; cursor: pointer; user-select: none;
         }
         .btn-file:hover { background: #eef2f4; border-color: #999; color: #333; }
-        .btn-file:active { background: #dde2e5; }
+        .btn-file:active { background: #dde2e5; transform: translateY(1px); }
         
         .btn-link { 
             text-decoration: none; font-size: 14px; color: #2fc6f6; margin-left: 5px; 
@@ -42,7 +42,6 @@
         }
         #ui-loader { text-align: center; color: #888; margin-top: 20px; }
         #install-screen, #main-screen { display: none; }
-        #visual-log { margin-top: 20px; padding: 10px; background: #000; color: #0f0; font-family: monospace; font-size: 10px; border-radius: 4px; max-height: 200px; overflow-y: auto; word-break: break-all; display:none; }
     </style>
 </head>
 <body>
@@ -72,16 +71,9 @@
             <div id="files-order" class="file-list"></div>
         </div>
     </div>
-    <div id="visual-log">Log started...</div>
 </div>
 
 <script>
-function log(msg) {
-    console.log(msg);
-    // const el = document.getElementById('visual-log');
-    // if(el) el.innerHTML = `> ${msg}<br>` + el.innerHTML;
-}
-
 const CONFIG = {
     LISTS: { DOGOVOR: 55, SPEC: 57, ORDER: 59 },
     PROPS: {
@@ -92,7 +84,6 @@ const CONFIG = {
         DEAL_SPEC: "UF_CRM_1766155890",
         DEAL_ORDER: "UF_CRM_1766155959",
 
-        // Числовые ID полей файлов (из сканера)
         FILE_IDS: {
             DOGOVOR: 309,
             SPEC: 313,
@@ -158,32 +149,18 @@ const app = {
             HANDLER: cleanUrl,
             TITLE: '1C Списки'
         }, r => alert(r.error() ? "Ошибка: " + r.error() : "Успешно!"));
-    },
-
-    // === ФУНКЦИЯ СКАЧИВАНИЯ ЧЕРЕЗ БИТРИКС ===
-    downloadFile: function(url) {
-        // 1. Убираем домен, чтобы получить относительный путь (например, /company/lists/...)
-        // openPath лучше работает с путями от корня портала
-        let relativePath = url;
-        try {
-            const urlObj = new URL(url);
-            relativePath = urlObj.pathname + urlObj.search;
-        } catch(e) {
-            // Если url уже относительный, ничего не делаем
-        }
-
-        console.log("Opening path:", relativePath);
-        
-        // 2. Командуем родительскому окну открыть этот путь
-        // Это использует сессию пользователя в основном окне
-        BX24.openPath(relativePath, function(result){
-            // Колбэк на случай отладки, обычно не нужен для скачивания
-            console.log("openPath result:", result);
-        });
     }
 };
 
 const logic = {
+    // Вспомогательная функция для открытия файла
+    openFileInNewTab: function(url) {
+        if(!url) return;
+        // Открываем в новой вкладке. 
+        // Браузер поймет, что это переход на тот же домен (битрикс), и подставит куки авторизации.
+        window.open(url, '_blank');
+    },
+
     fetchFileLinks: function(containerId, iblockId, elementId, fieldIdNumeric) {
         const container = document.getElementById(containerId);
         container.innerHTML = '<i>Загрузка...</i>';
@@ -193,7 +170,6 @@ const logic = {
             return;
         }
 
-        // Кнопка перехода в список
         const itemLink = document.createElement('a');
         itemLink.href = `https://${app.domain}/company/lists/${iblockId}/element/0/${elementId}/`;
         itemLink.target = "_blank";
@@ -205,7 +181,7 @@ const logic = {
             IBLOCK_TYPE_ID: 'lists',
             IBLOCK_ID: iblockId,
             ELEMENT_ID: elementId,
-            FIELD_ID: fieldIdNumeric // Передаем число (309)
+            FIELD_ID: fieldIdNumeric 
         }, function(res) {
             container.innerHTML = '';
             container.appendChild(itemLink);
@@ -216,14 +192,14 @@ const logic = {
             
             if (urls && urls.length > 0) {
                 urls.forEach((url, index) => {
-                    // Создаем div вместо ссылки, чтобы избежать блокировок браузера
                     const btn = document.createElement('div');
                     btn.className = 'btn-file';
                     btn.innerHTML = `📄 <span>Скачать файл ${index + 1}</span>`;
                     
-                    // Вешаем обработчик клика
+                    // --- ГЛАВНОЕ ИЗМЕНЕНИЕ ---
+                    // Просто открываем ссылку в новой вкладке браузера
                     btn.onclick = function() {
-                        app.downloadFile(url);
+                        logic.openFileInNewTab(url);
                     };
                     
                     container.appendChild(btn);
