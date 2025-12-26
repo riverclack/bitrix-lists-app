@@ -96,7 +96,7 @@
 function log(msg) {
     console.log(msg);
     const el = document.getElementById('debug-log');
-    if(el) {
+    if(el && el.style.display !== 'none') {
         const time = new Date().toLocaleTimeString();
         el.innerHTML = `[${time}] ${msg}<br>` + el.innerHTML;
     }
@@ -106,52 +106,52 @@ function saveLog(msg, color='black') {
     if(el) el.innerHTML += `<div style="color:${color}">${msg}</div>`;
 }
 
-// Глобальный перехват ошибок
 window.onerror = function(message, source, lineno, colno, error) {
-    log(`CRITICAL JS ERROR: ${message} at line ${lineno}`);
+    console.error(`ERROR: ${message} at line ${lineno}`);
 };
 
 const App = {
     config: null,
     domain: null,
-    currentCode: null, // Код текущего поля (если мы внутри поля)
+    currentCode: null,
 
     init: function() {
-        // 1. Пытаемся понять, где мы, БЕЗ Битрикса (по URL)
         const params = new URLSearchParams(window.location.search);
-        // Мы сами передадим ?config_code=... при регистрации
+        
+        // 1. ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА РЕЖИМА
+        // Битрикс всегда добавляет PLACEMENT=USERFIELD_TYPE когда открывает поле
+        const placement = params.get('PLACEMENT');
+        const isFieldMode = (placement === 'USERFIELD_TYPE');
+        
+        // Получаем код конфигурации (если он есть)
         this.currentCode = params.get('config_code'); 
         
-        // Быстрый парсинг опций встройки
+        // Парсим опции для быстрого старта
         let placementOptions = null;
         try {
             const rawOpts = params.get('PLACEMENT_OPTIONS');
             if (rawOpts) placementOptions = JSON.parse(rawOpts);
         } catch(e) {}
 
-        // Если есть config_code, значит мы точно ВНУТРИ ПОЛЯ
-        const isFieldMode = !!this.currentCode;
-
         BX24.init(() => {
             this.domain = BX24.getAuth().domain;
             
-            // Загружаем конфиг
             this.loadConfig((loadedConfig) => {
                 this.config = loadedConfig;
 
                 if (isFieldMode) {
-                    // === РЕЖИМ ПОЛЯ (FAST START) ===
-                    // Не ждем placement.info, если ID есть в URL
+                    // === МЫ ТОЧНО В СДЕЛКЕ ===
+                    // Никогда не показываем админку
+                    
                     if (placementOptions && placementOptions.ENTITY_ID) {
                         this.renderFieldMode(placementOptions.ENTITY_ID);
                     } else {
-                        // Фолбэк на стандартный метод (медленный)
                         BX24.placement.info((info) => {
                             this.renderFieldMode(info.options.ENTITY_ID);
                         });
                     }
                 } else {
-                    // === РЕЖИМ НАСТРОЕК ===
+                    // === МЫ В МЕНЮ ===
                     this.renderSettingsMode();
                 }
             });
@@ -162,23 +162,22 @@ const App = {
         BX24.callMethod('app.option.get', { option: 'riverclack_config_v4' }, (res) => {
             let data = res.data();
             
-            // Если нет конфига v4, пробуем мигрировать с v3
+            // Миграция со старых версий, если конфиг пустой
             if (!data) {
                 BX24.callMethod('app.option.get', { option: 'riverclack_config_v3' }, (res2) => {
                     let v3 = res2.data();
                     let newConfig = { configs: [] };
                     
                     if (v3 && v3.groups) {
-                        // Превращаем группы v3 в отдельные поля v4
                         v3.groups.forEach((grp, idx) => {
                             newConfig.configs.push({
-                                code: "field_" + idx, // генерируем код
+                                code: "field_" + idx, 
                                 title: v3.title + " - " + grp.title,
                                 levels: grp.levels
                             });
                         });
                     } else {
-                        // Дефолтный конфиг
+                        // Дефолт
                         newConfig.configs.push({
                             code: "main_list",
                             title: "1С Списки (Договоры)",
@@ -211,11 +210,22 @@ const App = {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('field-screen').style.display = 'block';
         
-        // Ищем конфиг для ТЕКУЩЕГО кода поля
-        const myConfig = this.config.configs.find(c => c.code === this.currentCode);
+        // 1. Ищем нужный конфиг по коду
+        let myConfig = null;
+        
+        if (this.currentCode) {
+            myConfig = this.config.configs.find(c => c.code === this.currentCode);
+        }
+        
+        // 2. ФОЛБЭК: Если код не передан (старое поле) или не найден
+        // Берем ПЕРВУЮ попавшуюся конфигурацию
+        if (!myConfig && this.config.configs.length > 0) {
+            console.warn("Config code not found or empty. Using first available config.");
+            myConfig = this.config.configs[0];
+        }
         
         if (!myConfig) {
-            document.getElementById('field-msg').innerText = "Ошибка: Конфигурация для этого поля не найдена (" + this.currentCode + ")";
+            document.getElementById('field-msg').innerText = "Ошибка: Конфигурация не найдена. Зайдите в настройки приложения.";
             return;
         }
 
@@ -229,8 +239,7 @@ const Settings = {
         const div = document.createElement('div');
         div.className = 'field-config-block';
         
-        // Генерируем случайный код, если нет (для новых)
-        if (!data.code) data.code = "fld_" + Math.floor(Math.random() * 10000);
+        if (!data.code) data.code = "fld_" + Math.floor(Math.random() * 100000);
 
         div.innerHTML = `
             <button class="btn-remove-config" onclick="this.closest('.field-config-block').remove()" title="Удалить это поле">×</button>
@@ -241,7 +250,7 @@ const Settings = {
                     <input type="text" class="inp-title form-input" value="${data.title || ''}" placeholder="Напр: 1С Логистика">
                 </div>
                 <div class="col">
-                    <label class="form-label">Системный ID (латиница):</label>
+                    <label class="form-label">Системный ID (не меняйте):</label>
                     <input type="text" class="inp-code form-input" value="${data.code}" readonly style="background:#f9f9f9; color:#777;">
                 </div>
             </div>
@@ -269,7 +278,7 @@ const Settings = {
     },
 
     addNewConfig: function() {
-        this.renderConfigBlock({ title: "Новое поле 1С", levels: [] });
+        this.renderConfigBlock({ title: "Новое поле", levels: [] });
     },
 
     addLevelRow: function(btn) {
@@ -295,7 +304,6 @@ const Settings = {
         
         const newConfig = { configs: [] };
 
-        // 1. Собираем данные
         document.querySelectorAll('.field-config-block').forEach(block => {
             const cfg = {
                 title: block.querySelector('.inp-title').value,
@@ -313,7 +321,6 @@ const Settings = {
             newConfig.configs.push(cfg);
         });
 
-        // 2. Сохраняем опции
         BX24.callMethod('app.option.set', { options: { riverclack_config_v4: newConfig } }, (res) => {
             if(res.error()) {
                 saveLog("Ошибка сохранения опций: " + res.error(), "red");
@@ -321,16 +328,11 @@ const Settings = {
             }
             saveLog("Конфигурация сохранена.", "green");
             
-            // 3. Регистрируем КАЖДОЕ поле отдельно
-            // Базовый URL хендлера (без параметров)
             const baseUrl = window.location.href.split('?')[0];
 
-            let processed = 0;
             newConfig.configs.forEach(cfg => {
-                // ВАЖНО: Добавляем параметр ?config_code=... к URL
-                // Это позволит скрипту понять, какое поле отрисовывать
                 const handlerUrl = baseUrl + "?config_code=" + cfg.code;
-                const userTypeId = 'riverclack_' + cfg.code; // Уникальный ID типа
+                const userTypeId = 'riverclack_' + cfg.code; 
 
                 BX24.callMethod('userfieldtype.add', {
                     USER_TYPE_ID: userTypeId, 
@@ -338,9 +340,7 @@ const Settings = {
                     TITLE: cfg.title,
                     DESCRIPTION: 'Поле 1С: ' + cfg.title
                 }, (res2) => {
-                    processed++;
                     if (res2.error()) {
-                         // Игнорируем ошибку "already binded", это норм
                          const err = res2.error().toString();
                          if(err.includes("already binded") || err.includes("400")) {
                              saveLog(`Поле "${cfg.title}" обновлено.`, "green");
@@ -348,7 +348,7 @@ const Settings = {
                              saveLog(`Ошибка регистрации "${cfg.title}": ${err}`, "red");
                          }
                     } else {
-                        saveLog(`Поле "${cfg.title}" успешно зарегистрировано!`, "blue");
+                        saveLog(`Поле "${cfg.title}" зарегистрировано!`, "blue");
                     }
                 });
             });
@@ -407,7 +407,6 @@ const FieldLogic = {
         const lvl = this.levels[idx];
         const el = document.getElementById(`sel-${idx}`);
         
-        // Очистка
         for(let i = idx; i < this.levels.length; i++) {
             const n = document.getElementById(`sel-${i}`);
             n.innerHTML = '<option value="">' + (i === idx ? 'Загрузка...' : '...') + '</option>';
