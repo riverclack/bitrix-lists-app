@@ -31,14 +31,9 @@
         #settings-screen { max-width: 900px; margin: 0 auto; padding: 20px; display: none; }
         .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 30px; }
         
-        /* Блок конфигурации поля */
-        .field-config-block { 
-            border: 2px solid #e0e2e4; border-radius: 6px; padding: 20px; margin-bottom: 30px; 
-            background: #fdfdfd; position: relative; 
-        }
+        .field-config-block { border: 2px solid #e0e2e4; border-radius: 6px; padding: 20px; margin-bottom: 30px; background: #fdfdfd; position: relative; }
         .field-header { display: flex; gap: 15px; margin-bottom: 15px; background: #f0f2f5; padding: 10px; border-radius: 4px; }
         .field-header .col { flex: 1; }
-        
         .btn-remove-config { position: absolute; top: -10px; right: -10px; background: #ff5752; color: #fff; border: none; cursor: pointer; width: 24px; height: 24px; border-radius: 50%; font-weight: bold; line-height: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
 
         table.config-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #fff; }
@@ -60,39 +55,36 @@
             font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto;
             border-top: 5px solid #444; word-break: break-all; display: none;
         }
+        
+        /* Инфо о режиме в поле */
+        #field-debug-info { font-size: 9px; color: #ccc; margin-bottom: 5px; text-align: right; display:none; }
     </style>
 </head>
 <body>
 
 <div id="loader-screen" style="text-align:center; padding: 20px; color: #888;">
-    <h3>Загрузка...</h3>
+    <h3>Загрузка приложения...</h3>
 </div>
 
 <div id="settings-screen">
     <div class="settings-card">
         <h2 style="margin-top:0;">🧩 Конструктор Полей</h2>
-        <p style="color:#666; font-size:13px; margin-bottom:20px;">
-            Создавайте разные типы полей. Каждая конфигурация ниже станет отдельным типом поля, который можно добавить в Сделку.
-        </p>
-        
         <div id="configs-container"></div>
-
         <button class="btn btn-new-field" onclick="Settings.addNewConfig()">+ Создать новый тип поля</button>
-
         <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить и Зарегистрировать поля</button>
         <div id="save-log" style="margin-top:10px; font-size: 12px; color: #555;"></div>
     </div>
-    
     <div id="debug-log"></div>
 </div>
 
 <div id="field-screen">
+    <div id="field-debug-info"></div>
     <div id="field-render-area"></div>
     <div id="field-msg" style="color:#999; text-align:center; padding:10px;"></div>
 </div>
 
 <script>
-// Логгер
+// --- ЛОГИРОВАНИЕ ---
 function log(msg) {
     console.log(msg);
     const el = document.getElementById('debug-log');
@@ -105,9 +97,14 @@ function saveLog(msg, color='black') {
     const el = document.getElementById('save-log');
     if(el) el.innerHTML += `<div style="color:${color}">${msg}</div>`;
 }
+function fieldDebug(msg) {
+    const el = document.getElementById('field-debug-info');
+    el.style.display = 'block';
+    el.innerText = msg;
+}
 
 window.onerror = function(message, source, lineno, colno, error) {
-    console.error(`ERROR: ${message} at line ${lineno}`);
+    log(`JS ERROR: ${message}`);
 };
 
 const App = {
@@ -117,16 +114,14 @@ const App = {
 
     init: function() {
         const params = new URLSearchParams(window.location.search);
-        
-        // 1. ЖЕЛЕЗОБЕТОННАЯ ПРОВЕРКА РЕЖИМА
-        // Битрикс всегда добавляет PLACEMENT=USERFIELD_TYPE когда открывает поле
+        // Битрикс всегда добавляет PLACEMENT=USERFIELD_TYPE, когда рендерит поле
         const placement = params.get('PLACEMENT');
         const isFieldMode = (placement === 'USERFIELD_TYPE');
         
-        // Получаем код конфигурации (если он есть)
+        // Получаем код конфигурации (который мы сами зашили при регистрации)
         this.currentCode = params.get('config_code'); 
         
-        // Парсим опции для быстрого старта
+        // Быстрый парсинг опций встройки
         let placementOptions = null;
         try {
             const rawOpts = params.get('PLACEMENT_OPTIONS');
@@ -140,18 +135,21 @@ const App = {
                 this.config = loadedConfig;
 
                 if (isFieldMode) {
-                    // === МЫ ТОЧНО В СДЕЛКЕ ===
-                    // Никогда не показываем админку
-                    
+                    // === РЕЖИМ ПОЛЯ ===
+                    // Показываем диагностику
+                    fieldDebug(`Code: ${this.currentCode || 'MISSING'} | Entity: ${placementOptions?.ENTITY_ID || '?'}`);
+
                     if (placementOptions && placementOptions.ENTITY_ID) {
+                        // Быстрый старт (данные из URL)
                         this.renderFieldMode(placementOptions.ENTITY_ID);
                     } else {
+                        // Медленный старт (запрос к Битрикс)
                         BX24.placement.info((info) => {
                             this.renderFieldMode(info.options.ENTITY_ID);
                         });
                     }
                 } else {
-                    // === МЫ В МЕНЮ ===
+                    // === РЕЖИМ НАСТРОЕК ===
                     this.renderSettingsMode();
                 }
             });
@@ -162,7 +160,7 @@ const App = {
         BX24.callMethod('app.option.get', { option: 'riverclack_config_v4' }, (res) => {
             let data = res.data();
             
-            // Миграция со старых версий, если конфиг пустой
+            // Если нет конфига v4, но есть v3, делаем тихую миграцию
             if (!data) {
                 BX24.callMethod('app.option.get', { option: 'riverclack_config_v3' }, (res2) => {
                     let v3 = res2.data();
@@ -171,7 +169,7 @@ const App = {
                     if (v3 && v3.groups) {
                         v3.groups.forEach((grp, idx) => {
                             newConfig.configs.push({
-                                code: "field_" + idx, 
+                                code: "field_" + idx, // генерируем временный код
                                 title: v3.title + " - " + grp.title,
                                 levels: grp.levels
                             });
@@ -180,10 +178,9 @@ const App = {
                         // Дефолт
                         newConfig.configs.push({
                             code: "main_list",
-                            title: "1С Списки (Договоры)",
+                            title: "Договоры (Пример)",
                             levels: [
-                                { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" },
-                                { name: "Спецификация", listId: "57", linkProp: "PROPERTY_PROPERTY_PARENT_DOGOVOR", crmField: "UF_CRM_1766155890" }
+                                { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" }
                             ]
                         });
                     }
@@ -212,20 +209,22 @@ const App = {
         
         // 1. Ищем нужный конфиг по коду
         let myConfig = null;
-        
         if (this.currentCode) {
             myConfig = this.config.configs.find(c => c.code === this.currentCode);
         }
         
-        // 2. ФОЛБЭК: Если код не передан (старое поле) или не найден
-        // Берем ПЕРВУЮ попавшуюся конфигурацию
-        if (!myConfig && this.config.configs.length > 0) {
-            console.warn("Config code not found or empty. Using first available config.");
-            myConfig = this.config.configs[0];
-        }
-        
+        // 2. Если конфиг не найден, мы НЕ гадаем, а пишем ошибку
+        // Это важно, чтобы вы видели, что URL битый
         if (!myConfig) {
-            document.getElementById('field-msg').innerText = "Ошибка: Конфигурация не найдена. Зайдите в настройки приложения.";
+            const msg = document.getElementById('field-msg');
+            msg.style.display = 'block';
+            msg.style.color = 'red';
+            msg.innerHTML = `
+                <b>Ошибка конфигурации</b><br>
+                Приложение не знает, какое поле показывать.<br>
+                Код в URL: ${this.currentCode || 'Отсутствует'}<br>
+                <small>Попробуйте зайти в настройки приложения и пересохранить конфигурацию.</small>
+            `;
             return;
         }
 
@@ -239,42 +238,31 @@ const Settings = {
         const div = document.createElement('div');
         div.className = 'field-config-block';
         
+        // Если кода нет, генерируем его и СОХРАНЯЕМ в атрибуте
         if (!data.code) data.code = "fld_" + Math.floor(Math.random() * 100000);
 
         div.innerHTML = `
-            <button class="btn-remove-config" onclick="this.closest('.field-config-block').remove()" title="Удалить это поле">×</button>
-            
+            <button class="btn-remove-config" onclick="this.closest('.field-config-block').remove()" title="Удалить">×</button>
             <div class="field-header">
                 <div class="col">
-                    <label class="form-label">Название типа поля (в CRM):</label>
+                    <label class="form-label">Название поля (в CRM):</label>
                     <input type="text" class="inp-title form-input" value="${data.title || ''}" placeholder="Напр: 1С Логистика">
                 </div>
                 <div class="col">
-                    <label class="form-label">Системный ID (не меняйте):</label>
+                    <label class="form-label">Технический ID:</label>
                     <input type="text" class="inp-code form-input" value="${data.code}" readonly style="background:#f9f9f9; color:#777;">
                 </div>
             </div>
-
             <table class="config-table">
-                <thead>
-                    <tr>
-                        <th width="20%">Имя (Label)</th>
-                        <th width="10%">List ID</th>
-                        <th width="25%">Связь (Код в 1С)</th>
-                        <th width="25%">Поле CRM (Код)</th>
-                        <th width="5%"></th>
-                    </tr>
-                </thead>
+                <thead><tr><th width="20%">Имя</th><th width="10%">ID Списка</th><th width="25%">Связь (Код)</th><th width="25%">CRM Поле</th><th width="5%"></th></tr></thead>
                 <tbody class="levels-tbody"></tbody>
             </table>
-            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Добавить уровень</button>
+            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Уровень</button>
         `;
         container.appendChild(div);
 
         const tbody = div.querySelector('.levels-tbody');
-        (data.levels || []).forEach(lvl => {
-            this.appendLevelRow(tbody, lvl);
-        });
+        (data.levels || []).forEach(lvl => this.appendLevelRow(tbody, lvl));
     },
 
     addNewConfig: function() {
@@ -282,8 +270,7 @@ const Settings = {
     },
 
     addLevelRow: function(btn) {
-        const tbody = btn.closest('.field-config-block').querySelector('.levels-tbody');
-        this.appendLevelRow(tbody, {});
+        this.appendLevelRow(btn.closest('.field-config-block').querySelector('.levels-tbody'), {});
     },
 
     appendLevelRow: function(tbody, data) {
@@ -300,7 +287,7 @@ const Settings = {
 
     save: function() {
         const logEl = document.getElementById('save-log');
-        logEl.innerHTML = "Начинаем сохранение...";
+        logEl.innerHTML = "Сохранение...";
         
         const newConfig = { configs: [] };
 
@@ -321,16 +308,20 @@ const Settings = {
             newConfig.configs.push(cfg);
         });
 
+        // 1. Сохраняем в базу
         BX24.callMethod('app.option.set', { options: { riverclack_config_v4: newConfig } }, (res) => {
             if(res.error()) {
-                saveLog("Ошибка сохранения опций: " + res.error(), "red");
+                saveLog("Ошибка сохранения: " + res.error(), "red");
                 return;
             }
             saveLog("Конфигурация сохранена.", "green");
             
-            const baseUrl = window.location.href.split('?')[0];
+            // 2. Регистрируем обработчики (ЗДЕСЬ МАГИЯ С URL)
+            // Мы убираем параметры из текущего URL, чтобы получить чистый путь
+            const baseUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
 
             newConfig.configs.forEach(cfg => {
+                // В URL добавляем config_code. Битрикс запомнит этот URL для этого типа поля.
                 const handlerUrl = baseUrl + "?config_code=" + cfg.code;
                 const userTypeId = 'riverclack_' + cfg.code; 
 
@@ -342,11 +333,8 @@ const Settings = {
                 }, (res2) => {
                     if (res2.error()) {
                          const err = res2.error().toString();
-                         if(err.includes("already binded") || err.includes("400")) {
-                             saveLog(`Поле "${cfg.title}" обновлено.`, "green");
-                         } else {
-                             saveLog(`Ошибка регистрации "${cfg.title}": ${err}`, "red");
-                         }
+                         if(err.includes("binded")) saveLog(`Поле "${cfg.title}" обновлено.`, "green");
+                         else saveLog(`Ошибка регистрации "${cfg.title}": ${err}`, "red");
                     } else {
                         saveLog(`Поле "${cfg.title}" зарегистрировано!`, "blue");
                     }
@@ -361,7 +349,7 @@ const FieldLogic = {
     levels: [],
 
     start: function(id, levels) {
-        this.entityId = id;
+        this.entityId = parseInt(id); // Приводим к числу
         this.levels = levels;
         
         const container = document.getElementById('field-render-area');
@@ -381,8 +369,11 @@ const FieldLogic = {
             document.getElementById(`sel-${idx}`).onchange = () => this.onChange(idx);
         });
 
-        if (this.entityId == 0) {
-            document.getElementById('field-msg').innerText = "Сохраните сделку";
+        // Если ID сделки 0, мы всё равно рисуем поля, но они пустые
+        if (this.entityId === 0) {
+            document.getElementById('field-msg').innerText = "Сохраните сделку, чтобы данные сохранялись.";
+            // Но загрузить первый уровень можно!
+            this.loadLevel(0, null);
             return;
         }
 
@@ -456,13 +447,14 @@ const FieldLogic = {
     onChange: function(idx) {
         const val = document.getElementById(`sel-${idx}`).value;
         const lvl = this.levels[idx];
-        
         this.updateLink(idx, val);
         
-        BX24.callMethod('crm.deal.update', {
-            ID: this.entityId,
-            FIELDS: { [lvl.crmField]: val }
-        });
+        if (this.entityId > 0) {
+            BX24.callMethod('crm.deal.update', {
+                ID: this.entityId,
+                FIELDS: { [lvl.crmField]: val }
+            });
+        }
 
         if (idx + 1 < this.levels.length) {
             this.loadLevel(idx + 1, val);
