@@ -10,9 +10,9 @@
         
         /* === ЭКРАН ПОЛЯ === */
         #field-screen { background: transparent; overflow: hidden; padding: 0; display: none; }
-        .group-block { margin-bottom: 15px; border-bottom: 1px dashed #eee; padding-bottom: 10px; }
+        .group-block { margin-bottom: 20px; border-bottom: 2px dashed #eee; padding-bottom: 15px; }
         .group-block:last-child { border-bottom: none; }
-        .group-title { font-size: 10px; color: #999; font-weight: bold; margin-bottom: 5px; letter-spacing: 0.5px; }
+        .group-title { font-size: 12px; color: #2fc6f6; font-weight: 800; margin-bottom: 10px; letter-spacing: 0.5px; text-transform: uppercase; }
         
         .control-row { margin-bottom: 8px; }
         .b24-label { font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
@@ -34,9 +34,7 @@
         #settings-screen { max-width: 900px; margin: 0 auto; padding: 20px; display: none; }
         .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 30px; }
         
-        /* Блок группы в настройках */
         .setting-group { border: 1px solid #e0e2e4; border-radius: 4px; padding: 15px; margin-bottom: 20px; background: #fdfdfd; position: relative; }
-        .setting-group h4 { margin: 0 0 10px 0; font-size: 14px; color: #333; }
         .btn-remove-group { position: absolute; top: 10px; right: 10px; background: #ffdede; color: #d00; border: none; cursor: pointer; padding: 5px 10px; border-radius: 3px; font-size: 11px; }
 
         table.config-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #fff; }
@@ -45,15 +43,15 @@
         table.config-table input { width: 100%; box-sizing: border-box; height: 30px; border: 1px solid #c6cdd3; border-radius: 3px; padding: 0 8px; font-size: 13px; }
         
         .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s; }
-        .btn-primary { background: #2fc6f6; color: #fff; }
         .btn-success { background: #9dcf00; color: #fff; font-size: 15px; padding: 12px 24px; }
         .btn-add { background: #eef2f4; color: #333; border: 1px solid #c6cdd3; font-size: 12px; }
         .btn-new-group { background: #dff0d8; color: #3c763d; border: 1px solid #d6e9c6; width: 100%; margin-bottom: 20px; padding: 10px; border-style: dashed; }
         .btn-del { background: #ff5752; color: #fff; width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 3px; }
 
+        /* ОТЛАДКА */
         #debug-log {
-            margin-top: 50px; padding: 10px; background: #222; color: #0f0; 
-            font-family: monospace; font-size: 11px; max-height: 300px; overflow-y: auto;
+            margin-top: 30px; padding: 15px; background: #222; color: #0f0; 
+            font-family: monospace; font-size: 11px; max-height: 400px; overflow-y: auto;
             border-top: 5px solid #444; word-break: break-all;
         }
     </style>
@@ -68,14 +66,13 @@
     <div class="settings-card">
         <h2 style="margin-top:0;">⚙️ Конструктор полей 1С</h2>
         <p style="color:#666; font-size:13px; margin-bottom:20px;">
-            Создавайте независимые группы полей. Каждая группа — это отдельная цепочка зависимых списков.
+            Все созданные здесь группы будут отображаться внутри <b>одного поля</b> в CRM.
         </p>
         
         <label style="display:block; margin-bottom:5px; font-weight:bold;">Название общего поля в CRM:</label>
         <input type="text" id="conf-title" style="width:100%; max-width:400px; height:36px; border:1px solid #ccc; margin-bottom:20px;">
 
-        <div id="groups-container">
-            </div>
+        <div id="groups-container"></div>
 
         <button class="btn btn-new-group" onclick="Settings.addNewGroup()">+ Добавить новую группу списков</button>
 
@@ -103,27 +100,39 @@ function log(msg) {
     }
 }
 
+// Глобальный перехват ошибок
+window.onerror = function(message, source, lineno, colno, error) {
+    log(`CRITICAL ERROR: ${message} at line ${lineno}`);
+};
+
 const App = {
     config: null,
     domain: null,
 
     init: function() {
+        log("App initializing...");
         const params = new URLSearchParams(window.location.search);
         const placementType = params.get('PLACEMENT') || 'DEFAULT'; 
+        log("Placement Type: " + placementType);
         
         BX24.init(() => {
             this.domain = BX24.getAuth().domain;
+            log("Domain: " + this.domain);
             
             this.loadConfig((loadedConfig) => {
                 this.config = loadedConfig;
+                log("Config loaded. Groups count: " + (this.config.groups ? this.config.groups.length : 0));
 
                 if (placementType === 'USERFIELD_TYPE') {
                     // РЕЖИМ ПОЛЯ
+                    log("Entering Field Mode...");
                     BX24.placement.info((info) => {
+                        log("Placement Info received. Entity ID: " + info.options.ENTITY_ID);
                         this.renderFieldMode(info.options);
                     });
                 } else {
                     // РЕЖИМ НАСТРОЕК
+                    log("Entering Settings Mode...");
                     this.renderSettingsMode();
                 }
             });
@@ -134,26 +143,24 @@ const App = {
         BX24.callMethod('app.option.get', { option: 'riverclack_config_v3' }, (res) => {
             let data = res.data();
             
-            // --- МИГРАЦИЯ ДАННЫХ ---
-            // Если у пользователя старый конфиг (без групп), конвертируем его
+            // Миграция старых данных
             if (!data) {
-                // Пытаемся взять из v2
+                log("No v3 config found. Checking v2...");
                 BX24.callMethod('app.option.get', { option: 'riverclack_config_v2' }, (res2) => {
                     let oldData = res2.data();
                     if (oldData && oldData.levels) {
-                        log("Migrating config from v2 to v3...");
+                        log("Migrating v2 -> v3");
                         callback({
                             title: oldData.title,
                             groups: [{ title: "Основная группа", levels: oldData.levels }]
                         });
                     } else {
+                        log("No config found. Using default.");
                         callback(this.getDefaultConfig());
                     }
                 });
                 return;
             }
-            // --- КОНЕЦ МИГРАЦИИ ---
-
             callback(data);
         });
     },
@@ -163,11 +170,9 @@ const App = {
             title: "1С Списки",
             groups: [
                 {
-                    title: "Договоры и Заказы",
+                    title: "Пример группы",
                     levels: [
-                        { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" },
-                        { name: "Спецификация", listId: "57", linkProp: "PROPERTY_PROPERTY_PARENT_DOGOVOR", crmField: "UF_CRM_1766155890" },
-                        { name: "Заказ", listId: "59", linkProp: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", crmField: "UF_CRM_1766155959" }
+                        { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" }
                     ]
                 }
             ]
@@ -177,33 +182,33 @@ const App = {
     renderSettingsMode: function() {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('settings-screen').style.display = 'block';
-        document.getElementById('debug-log').style.display = 'block';
 
         document.getElementById('conf-title').value = this.config.title || "1C Списки";
         const container = document.getElementById('groups-container');
         container.innerHTML = '';
         
-        (this.config.groups || []).forEach((grp, idx) => Settings.renderGroup(grp, idx));
-        log("Settings rendered.");
+        if (this.config.groups && this.config.groups.length > 0) {
+            this.config.groups.forEach((grp, idx) => Settings.renderGroup(grp, idx));
+        } else {
+            Settings.addNewGroup();
+        }
     },
 
     renderFieldMode: function(options) {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('field-screen').style.display = 'block';
-        document.getElementById('debug-log').style.display = 'none';
+        // В поле лог можно скрыть, если мешает, но сейчас оставим
+        // document.getElementById('debug-log').style.display = 'none';
         
         FieldLogic.start(options.ENTITY_ID);
     }
 };
 
 const Settings = {
-    // Рендерит блок одной группы
     renderGroup: function(groupData = {}, index) {
         const container = document.getElementById('groups-container');
         const div = document.createElement('div');
         div.className = 'setting-group';
-        div.dataset.index = index; // Чтобы знать порядок
-        
         div.innerHTML = `
             <button class="btn-remove-group" onclick="Settings.removeGroup(this)">Удалить группу</button>
             <label style="font-size:12px; font-weight:bold;">Название группы (для себя):</label>
@@ -221,12 +226,10 @@ const Settings = {
                 </thead>
                 <tbody class="levels-tbody"></tbody>
             </table>
-            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Добавить уровень в эту группу</button>
+            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Добавить уровень</button>
         `;
-
         container.appendChild(div);
 
-        // Рендерим уровни внутри группы
         const tbody = div.querySelector('.levels-tbody');
         (groupData.levels || []).forEach(lvl => {
             this.appendLevelRow(tbody, lvl);
@@ -263,19 +266,18 @@ const Settings = {
     save: function() {
         const msg = document.getElementById('save-msg');
         msg.innerText = "Сохранение...";
+        log("Saving configuration...");
         
         const newConfig = {
             title: document.getElementById('conf-title').value,
             groups: []
         };
 
-        // Собираем данные по группам
         document.querySelectorAll('.setting-group').forEach(groupDiv => {
             const groupObj = {
                 title: groupDiv.querySelector('.group-title-input').value,
                 levels: []
             };
-
             groupDiv.querySelectorAll('tbody tr').forEach(tr => {
                 groupObj.levels.push({
                     name: tr.querySelector('.inp-name').value,
@@ -284,16 +286,21 @@ const Settings = {
                     crmField: tr.querySelector('.inp-crm').value
                 });
             });
-
             newConfig.groups.push(groupObj);
         });
 
+        log("New Config Structure: " + JSON.stringify(newConfig));
+
+        // 1. Сохраняем опции
         BX24.callMethod('app.option.set', { options: { riverclack_config_v3: newConfig } }, (res) => {
             if(res.error()) {
-                msg.innerText = "Ошибка: " + res.error();
+                log("Error saving options: " + res.error());
+                msg.innerText = "Ошибка сохранения!";
                 return;
             }
+            log("Options saved.");
             
+            // 2. Регистрируем тип поля
             const handlerUrl = window.location.href.split('?')[0];
             BX24.callMethod('userfieldtype.add', {
                 USER_TYPE_ID: 'riverclack_lists_pro', 
@@ -301,7 +308,13 @@ const Settings = {
                 TITLE: newConfig.title,
                 DESCRIPTION: 'Мульти-списки 1С'
             }, (res2) => {
-                msg.innerText = "✅ Сохранено!";
+                if(res2.error()) {
+                    log("Error registering field: " + res2.error());
+                    msg.innerText = "Ошибка регистрации поля";
+                } else {
+                    log("Field type registered successfully.");
+                    msg.innerText = "✅ Сохранено! Проверьте поле в сделке.";
+                }
             });
         });
     }
@@ -315,23 +328,23 @@ const FieldLogic = {
         this.entityId = id;
         this.groups = App.config.groups || [];
         
+        log("Rendering " + this.groups.length + " groups...");
+        
         const container = document.getElementById('field-render-area');
         container.innerHTML = '';
         
-        // Рендерим каждую группу
         this.groups.forEach((grp, gIdx) => {
             const grpDiv = document.createElement('div');
             grpDiv.className = 'group-block';
             
-            // Заголовок группы (если их несколько, полезно показывать)
-            if (this.groups.length > 1 && grp.title) {
+            // Показываем заголовок группы
+            if(grp.title) {
                 grpDiv.innerHTML += `<div class="group-title">${grp.title}</div>`;
             }
 
             grp.levels.forEach((lvl, lIdx) => {
                 const row = document.createElement('div');
                 row.className = 'control-row';
-                // ID теперь составной: sel-0-0 (группа-уровень)
                 row.innerHTML = `
                     <div class="b24-label">${lvl.name}</div>
                     <div class="input-group">
@@ -345,7 +358,6 @@ const FieldLogic = {
             container.appendChild(grpDiv);
         });
         
-        // Вешаем обработчики (после добавления в DOM)
         this.groups.forEach((grp, gIdx) => {
             grp.levels.forEach((lvl, lIdx) => {
                  document.getElementById(`sel-${gIdx}-${lIdx}`).onchange = () => this.onChange(gIdx, lIdx);
@@ -361,18 +373,17 @@ const FieldLogic = {
     },
 
     sync: function() {
+        log("Syncing with Deal ID: " + this.entityId);
         BX24.callMethod('crm.deal.get', { ID: this.entityId }, res => {
             if(!res.data()) return;
             const data = res.data();
             
-            // Распределяем данные по группам и уровням
             this.groups.forEach(grp => {
                 grp.levels.forEach(lvl => {
                     lvl.val = data[lvl.crmField];
                 });
             });
 
-            // Запускаем загрузку нулевого уровня для КАЖДОЙ группы
             this.groups.forEach((_, gIdx) => {
                 this.loadLevel(gIdx, 0, null);
             });
@@ -386,7 +397,6 @@ const FieldLogic = {
         const lvl = grp.levels[lIdx];
         const el = document.getElementById(`sel-${gIdx}-${lIdx}`);
         
-        // Очистка нижних уровней в ЭТОЙ группе
         for(let i = lIdx; i < grp.levels.length; i++) {
             const n = document.getElementById(`sel-${gIdx}-${i}`);
             n.innerHTML = '<option value="">' + (i === lIdx ? 'Загрузка...' : '...') + '</option>';
@@ -422,15 +432,14 @@ const FieldLogic = {
                 if (exists) {
                     el.value = lvl.val;
                     this.updateLink(gIdx, lIdx, lvl.val);
-                    // Рекурсия на уровень ниже
                     this.loadLevel(gIdx, lIdx + 1, lvl.val);
                 } else {
                     lvl.val = null;
                 }
             }
             
-            // Ресайз
-            BX24.placement.call('resizeWindow', { width: '100%', height: document.body.scrollHeight + 20 });
+            const h = document.body.scrollHeight;
+            BX24.placement.call('resizeWindow', { width: '100%', height: h + 20 });
         });
     },
 
@@ -438,11 +447,16 @@ const FieldLogic = {
         const val = document.getElementById(`sel-${gIdx}-${lIdx}`).value;
         const lvl = this.groups[gIdx].levels[lIdx];
         
+        log(`Change detected Group ${gIdx} Level ${lIdx} -> ${val}`);
+
         this.updateLink(gIdx, lIdx, val);
         
         BX24.callMethod('crm.deal.update', {
             ID: this.entityId,
             FIELDS: { [lvl.crmField]: val }
+        }, (res) => {
+            if(res.error()) log("Save error: " + res.error());
+            else log("Saved to CRM.");
         });
 
         if (lIdx + 1 < this.groups[gIdx].levels.length) {
