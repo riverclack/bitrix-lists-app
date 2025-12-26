@@ -3,124 +3,121 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>1C Списки (Единое поле)</title>
+    <title>Конструктор Полей 1С (Pro)</title>
     <script src="https://api.bitrix24.com/api/v1/"></script>
     <style>
         body { margin: 0; padding: 0; background: #fff; font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        /* === STYLE FOR THE CRM FIELD === */
+        /* === ЭКРАН ПОЛЯ === */
         #field-screen { background: transparent; overflow: hidden; padding: 0; display: none; }
         
-        /* Group Container */
-        .field-group { 
-            margin-bottom: 15px; 
-            padding-bottom: 15px; 
-            border-bottom: 1px dashed #dce1e6; 
-        }
-        .field-group:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-        
-        .group-title { 
-            font-size: 11px; 
-            font-weight: 700; 
-            color: #aeb4bb; 
-            text-transform: uppercase; 
-            margin-bottom: 8px; 
-            letter-spacing: 0.5px;
-        }
-
         .control-row { margin-bottom: 8px; }
-        .b24-label { font-size: 12px; color: #535c69; margin-bottom: 2px; display: block; font-weight: 600; }
+        .b24-label { font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
         .input-group { display: flex; align-items: center; gap: 5px; }
         
         .b24-select {
             flex-grow: 1; height: 34px; padding: 0 8px; font-size: 14px; color: #333; background: #fff;
             border: 1px solid #c6cdd3; border-radius: 2px; box-sizing: border-box; outline: none;
-            transition: border-color 0.2s;
         }
         .b24-select:focus { border-color: #2fc6f6; }
-        .b24-select:disabled { background: #f4f4f4; color: #aaa; cursor: not-allowed; }
+        .b24-select:disabled { background: #f4f4f4; color: #aaa; }
         
         .btn-link {
             display: none; align-items: center; justify-content: center;
             width: 34px; height: 34px; border: 1px solid #c6cdd3; border-radius: 2px;
-            background: #fff; text-decoration: none; color: #80868e; font-size: 16px; transition: 0.2s;
+            background: #fff; text-decoration: none; color: #555; font-size: 16px;
         }
-        .btn-link:hover { background: #f0f2f5; color: #2fc6f6; border-color: #2fc6f6; }
+        .btn-link:hover { background: #f0f2f5; color: #2fc6f6; }
 
-        /* === STYLE FOR SETTINGS SCREEN === */
+        /* Фолбэк селектор (если потерялась конфига) */
+        #fallback-selector { padding: 10px; background: #fff4e5; border: 1px solid #ffd591; border-radius: 4px; display: none; margin-bottom: 10px; }
+        #fallback-selector p { margin: 0 0 5px 0; font-size: 12px; color: #d46b08; }
+
+        /* === ЭКРАН НАСТРОЕК === */
         #settings-screen { max-width: 900px; margin: 0 auto; padding: 20px; display: none; }
         .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 30px; }
         
-        .config-block { 
-            border: 1px solid #e0e2e4; 
-            border-radius: 4px; 
-            padding: 20px; 
-            margin-bottom: 20px; 
-            background: #fdfdfd; 
-            position: relative; 
-        }
-        .btn-remove-group { position: absolute; top: 15px; right: 15px; background: #ffdede; color: #d00; border: none; cursor: pointer; padding: 5px 10px; border-radius: 3px; font-size: 12px; }
+        .config-block { border: 2px solid #e0e2e4; border-radius: 6px; padding: 20px; margin-bottom: 30px; background: #fdfdfd; position: relative; }
+        .config-header { display: flex; gap: 15px; margin-bottom: 15px; background: #f0f2f5; padding: 10px; border-radius: 4px; }
+        .config-header .col { flex: 1; }
+        .btn-remove-config { position: absolute; top: -10px; right: -10px; background: #ff5752; color: #fff; border: none; cursor: pointer; width: 24px; height: 24px; border-radius: 50%; font-weight: bold; line-height: 1; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
 
-        table.config-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #fff; border: 1px solid #eee; }
-        table.config-table th { text-align: left; background: #f0f2f5; padding: 8px; font-size: 11px; color: #535c69; border-bottom: 1px solid #ddd; }
-        table.config-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+        table.config-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #fff; }
+        table.config-table th { text-align: left; background: #fff; padding: 5px; font-size: 10px; color: #999; border-bottom: 1px solid #ddd; }
+        table.config-table td { padding: 5px; vertical-align: top; }
         table.config-table input { width: 100%; box-sizing: border-box; height: 30px; border: 1px solid #c6cdd3; border-radius: 3px; padding: 0 8px; font-size: 13px; }
         
-        .form-input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #c6cdd3; border-radius: 3px; box-sizing: border-box; margin-bottom: 10px; }
-        
+        .form-label { display: block; margin-bottom: 4px; font-weight: bold; font-size: 11px; color: #535c69; text-transform: uppercase; }
+        .form-input { width: 100%; height: 36px; padding: 0 10px; border: 1px solid #c6cdd3; border-radius: 3px; box-sizing: border-box; }
+
         .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 13px; transition: 0.2s; }
         .btn-success { background: #9dcf00; color: #fff; font-size: 16px; padding: 12px 24px; width: 100%; }
+        .btn-new-field { background: #2fc6f6; color: #fff; width: 100%; margin-bottom: 30px; padding: 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
         .btn-add { background: #eef2f4; color: #333; border: 1px solid #c6cdd3; font-size: 12px; }
-        .btn-new-group { background: #dff0d8; color: #3c763d; border: 1px solid #d6e9c6; width: 100%; margin-bottom: 20px; padding: 12px; border-style: dashed; }
-        .btn-del { background: #ffdede; color: #d00; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 3px; }
+        .btn-del { background: #ffdede; color: #d00; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 3px; }
 
-        #loader-screen { display: flex; justify-content: center; align-items: center; height: 100vh; color: #888; font-size: 14px; }
+        #debug-log { margin-top: 30px; padding: 15px; background: #222; color: #0f0; font-family: monospace; font-size: 11px; max-height: 200px; overflow-y: auto; border-top: 5px solid #444; word-break: break-all; display: none; }
     </style>
 </head>
 <body>
 
-<div id="loader-screen">Загрузка...</div>
+<div id="loader-screen" style="text-align:center; padding: 20px; color: #888;">
+    <h3>Загрузка...</h3>
+</div>
 
 <div id="settings-screen">
     <div class="settings-card">
-        <h2 style="margin-top:0;">⚙️ Настройка поля "1С Списки"</h2>
+        <h2 style="margin-top:0;">🧩 Раздельные поля 1С</h2>
         <p style="color:#666; font-size:13px; margin-bottom:20px;">
-            Все созданные ниже группы будут отображаться в <b>одном поле</b> в сделке.
+            Каждая группа настроек станет <b>отдельным полем</b> в Сделке.
         </p>
         
-        <div id="groups-container"></div>
-
-        <button class="btn btn-new-group" onclick="Settings.addNewGroup()">+ Добавить группу списков</button>
-
-        <hr style="border:0; border-top:1px solid #eee; margin: 20px 0;">
-
-        <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить конфигурацию</button>
+        <div id="configs-container"></div>
+        <button class="btn btn-new-field" onclick="Settings.addNewConfig()">+ Создать новую группу (новое поле)</button>
+        <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить и Зарегистрировать поля</button>
         <div id="save-log" style="margin-top:10px; font-size: 12px; color: #555;"></div>
     </div>
+    <div id="debug-log"></div>
 </div>
 
 <div id="field-screen">
+    <div id="fallback-selector">
+        <p>⚠️ Это поле потеряло связь с настройками. Выберите вручную, что здесь показывать:</p>
+        <select id="manual-group-select" class="b24-select" onchange="App.manualSelectGroup(this.value)">
+            <option value="">-- Выберите группу --</option>
+        </select>
+    </div>
+
     <div id="field-render-area"></div>
     <div id="field-msg" style="color:#999; text-align:center; padding:10px;"></div>
 </div>
 
 <script>
-// --- CORE APP LOGIC ---
+function log(msg) {
+    console.log(msg);
+    const el = document.getElementById('debug-log');
+    if(el && el.style.display !== 'none') el.innerHTML = `> ${msg}<br>` + el.innerHTML;
+}
+function saveLog(msg, color='black') {
+    const el = document.getElementById('save-log');
+    if(el) el.innerHTML += `<div style="color:${color}">${msg}</div>`;
+}
+
 const App = {
     config: null,
     domain: null,
+    currentGroupId: null, // ID группы из URL
 
     init: function() {
         const params = new URLSearchParams(window.location.search);
-        // Reliable check for field mode
         const placement = params.get('PLACEMENT');
         const isFieldMode = (placement === 'USERFIELD_TYPE');
+        this.currentGroupId = params.get('group_id'); 
         
-        // Fast entity ID parsing
-        let entityId = 0;
+        let placementOptions = null;
         try {
             const rawOpts = params.get('PLACEMENT_OPTIONS');
-            if (rawOpts) entityId = JSON.parse(rawOpts).ENTITY_ID;
+            if (rawOpts) placementOptions = JSON.parse(rawOpts);
         } catch(e) {}
 
         BX24.init(() => {
@@ -130,17 +127,14 @@ const App = {
                 this.config = loadedConfig;
 
                 if (isFieldMode) {
-                    // FIELD MODE
-                    if (entityId) {
-                        this.renderFieldMode(entityId);
+                    if (placementOptions && placementOptions.ENTITY_ID) {
+                        this.renderFieldMode(placementOptions.ENTITY_ID);
                     } else {
-                        // Fallback if URL parsing failed
                         BX24.placement.info((info) => {
                             this.renderFieldMode(info.options.ENTITY_ID);
                         });
                     }
                 } else {
-                    // SETTINGS MODE
                     this.renderSettingsMode();
                 }
             });
@@ -148,23 +142,16 @@ const App = {
     },
 
     loadConfig: function(callback) {
-        // We use a new option key 'riverclack_config_unified' to start fresh
-        BX24.callMethod('app.option.get', { option: 'riverclack_config_unified' }, (res) => {
+        // ИСПОЛЬЗУЕМ v5 ЧТОБЫ НАЧАТЬ С ЧИСТОГО ЛИСТА
+        BX24.callMethod('app.option.get', { option: 'riverclack_config_v5' }, (res) => {
             let data = res.data();
             if (!data) {
-                // Default config
-                callback({
-                    groups: [
-                        {
-                            title: "Договоры и Заказы",
-                            levels: [
-                                { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" },
-                                { name: "Спецификация", listId: "57", linkProp: "PROPERTY_PROPERTY_PARENT_DOGOVOR", crmField: "UF_CRM_1766155890" },
-                                { name: "Заказ", listId: "59", linkProp: "PROPERTY_PROPERTY_PARENT_SPECIFICATION", crmField: "UF_CRM_1766155959" }
-                            ]
-                        }
-                    ]
-                });
+                // Дефолтный конфиг
+                callback({ groups: [{
+                    id: "grp_" + Math.floor(Math.random() * 10000),
+                    title: "1С: Договоры",
+                    levels: [{ name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" }]
+                }]});
                 return;
             }
             callback(data);
@@ -174,47 +161,92 @@ const App = {
     renderSettingsMode: function() {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('settings-screen').style.display = 'block';
+        document.getElementById('debug-log').style.display = 'block';
 
-        const container = document.getElementById('groups-container');
+        const container = document.getElementById('configs-container');
         container.innerHTML = '';
-        
-        (this.config.groups || []).forEach(grp => Settings.renderGroup(grp));
+        (this.config.groups || []).forEach(grp => Settings.renderConfigBlock(grp));
     },
 
-    renderFieldMode: function(id) {
+    renderFieldMode: function(entityId) {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('field-screen').style.display = 'block';
         
-        FieldLogic.start(id, this.config.groups);
+        // 1. Пытаемся найти группу по ID из URL
+        let targetGroup = null;
+        if (this.currentGroupId) {
+            targetGroup = this.config.groups.find(g => g.id === this.currentGroupId);
+        }
+
+        // 2. Если группа найдена - запускаем
+        if (targetGroup) {
+            FieldLogic.start(entityId, targetGroup.levels);
+            return;
+        }
+
+        // 3. ЕСЛИ ГРУППА НЕ НАЙДЕНА (СБОЙ ИЛИ УДАЛЕНИЕ)
+        // Показываем "Аварийный селектор"
+        const selector = document.getElementById('manual-group-select');
+        const container = document.getElementById('fallback-selector');
+        
+        container.style.display = 'block'; // Показываем блок выбора
+        
+        this.config.groups.forEach(g => {
+            selector.innerHTML += `<option value="${g.id}">${g.title}</option>`;
+        });
+
+        // Сохраняем ID сущности для ручного запуска
+        this.tempEntityId = entityId;
+        
+        // Ресайз окна, чтобы селектор влез
+        BX24.placement.call('resizeWindow', { width: '100%', height: 150 });
+    },
+    
+    // Ручной выбор группы (если автоматика не сработала)
+    manualSelectGroup: function(groupId) {
+        if(!groupId) return;
+        const targetGroup = this.config.groups.find(g => g.id === groupId);
+        if(targetGroup) {
+            document.getElementById('fallback-selector').style.display = 'none';
+            FieldLogic.start(this.tempEntityId, targetGroup.levels);
+        }
     }
 };
 
-// --- SETTINGS LOGIC ---
 const Settings = {
-    renderGroup: function(groupData = {}) {
-        const container = document.getElementById('groups-container');
+    renderConfigBlock: function(data = {}) {
+        const container = document.getElementById('configs-container');
         const div = document.createElement('div');
         div.className = 'config-block';
         
+        if (!data.id) data.id = "grp_" + Math.floor(Math.random() * 100000);
+
         div.innerHTML = `
-            <button class="btn-remove-group" onclick="this.closest('.config-block').remove()">Удалить группу</button>
-            <label style="font-size:12px; font-weight:bold;">Название группы:</label>
-            <input type="text" class="group-title form-input" value="${groupData.title || ''}" placeholder="Напр: Логистика">
-            
+            <button class="btn-remove-config" onclick="this.closest('.config-block').remove()" title="Удалить">×</button>
+            <div class="config-header">
+                <div class="col">
+                    <label class="form-label">Название поля (в списке полей CRM):</label>
+                    <input type="text" class="inp-title form-input" value="${data.title || ''}" placeholder="Напр: 1С Снабжение">
+                </div>
+                <div class="col">
+                    <label class="form-label">System ID:</label>
+                    <input type="text" class="inp-id form-input" value="${data.id}" readonly style="background:#f9f9f9; color:#777;">
+                </div>
+            </div>
             <table class="config-table">
-                <thead><tr><th width="20%">Имя поля</th><th width="10%">List ID</th><th width="25%">Связь (Код в 1С)</th><th width="30%">Поле CRM (Код)</th><th width="5%"></th></tr></thead>
+                <thead><tr><th width="20%">Имя</th><th width="10%">ID Списка</th><th width="25%">Связь (Код)</th><th width="25%">CRM Поле</th><th width="5%"></th></tr></thead>
                 <tbody class="levels-tbody"></tbody>
             </table>
-            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Добавить уровень</button>
+            <button class="btn btn-add" onclick="Settings.addLevelRow(this)">+ Уровень</button>
         `;
         container.appendChild(div);
 
         const tbody = div.querySelector('.levels-tbody');
-        (groupData.levels || []).forEach(lvl => Settings.appendLevelRow(tbody, lvl));
+        (data.levels || []).forEach(lvl => this.appendLevelRow(tbody, lvl));
     },
 
-    addNewGroup: function() {
-        this.renderGroup({ title: "Новая группа", levels: [] });
+    addNewConfig: function() {
+        this.renderConfigBlock({ title: "Новая группа полей", levels: [] });
     },
 
     addLevelRow: function(btn) {
@@ -238,12 +270,16 @@ const Settings = {
         logEl.innerHTML = "Сохранение...";
         
         const newConfig = { groups: [] };
+        const activeIds = [];
 
         document.querySelectorAll('.config-block').forEach(block => {
             const grp = {
-                title: block.querySelector('.group-title').value,
+                title: block.querySelector('.inp-title').value,
+                id: block.querySelector('.inp-id').value,
                 levels: []
             };
+            activeIds.push('riverclack_' + grp.id); // ID для Битрикса
+            
             block.querySelectorAll('tbody tr').forEach(tr => {
                 grp.levels.push({
                     name: tr.querySelector('.inp-name').value,
@@ -255,74 +291,79 @@ const Settings = {
             newConfig.groups.push(grp);
         });
 
-        // 1. Save Config
-        BX24.callMethod('app.option.set', { options: { riverclack_config_unified: newConfig } }, (res) => {
+        // 1. Сохраняем в v5
+        BX24.callMethod('app.option.set', { options: { riverclack_config_v5: newConfig } }, (res) => {
             if(res.error()) {
-                logEl.innerHTML = "<span style='color:red'>Ошибка сохранения: " + res.error() + "</span>";
+                saveLog("Ошибка сохранения: " + res.error(), "red");
                 return;
             }
+            saveLog("Конфигурация сохранена.", "green");
             
-            // 2. Register Single Field Type
-            const handlerUrl = window.location.href.split('?')[0];
-            BX24.callMethod('userfieldtype.add', {
-                USER_TYPE_ID: 'riverclack_unified_field', 
-                HANDLER: handlerUrl,
-                TITLE: '1С Списки (Мульти)',
-                DESCRIPTION: 'Единое поле для всех списков 1С'
-            }, (res2) => {
-                logEl.innerHTML = "<span style='color:green'>✅ Конфигурация сохранена! Обновите CRM.</span>";
+            // 2. Удаляем старые/удаленные поля
+            BX24.callMethod('userfieldtype.list', {}, (listRes) => {
+                if(listRes.data()) {
+                    listRes.data().forEach(type => {
+                        // Если это наше поле (riverclack_), но его нет в текущем конфиге -> УДАЛЯЕМ
+                        if(type.USER_TYPE_ID.startsWith('riverclack_') && !activeIds.includes(type.USER_TYPE_ID)) {
+                            saveLog(`Удаляю старый тип поля: ${type.DESCRIPTION}...`, "orange");
+                            BX24.callMethod('userfieldtype.delete', { USER_TYPE_ID: type.USER_TYPE_ID });
+                        }
+                    });
+                }
+
+                // 3. Регистрируем актуальные поля
+                const baseUrl = window.location.href.split('?')[0];
+
+                newConfig.groups.forEach(grp => {
+                    const handlerUrl = baseUrl + "?group_id=" + grp.id;
+                    const userTypeId = 'riverclack_' + grp.id; 
+
+                    BX24.callMethod('userfieldtype.add', {
+                        USER_TYPE_ID: userTypeId, 
+                        HANDLER: handlerUrl,
+                        TITLE: grp.title,
+                        DESCRIPTION: 'App Field: ' + grp.title
+                    }, (res2) => {
+                        if (res2.error() && !res2.error().toString().includes("binded")) {
+                             saveLog(`Ошибка регистрации "${grp.title}": ${res2.error()}`, "red");
+                        } else {
+                            saveLog(`Поле "${grp.title}" готово к работе!`, "blue");
+                        }
+                    });
+                });
             });
         });
     }
 };
 
-// --- FIELD LOGIC ---
 const FieldLogic = {
     entityId: 0,
-    groups: [],
+    levels: [],
 
-    start: function(id, groups) {
+    start: function(id, levels) {
         this.entityId = parseInt(id) || 0;
-        this.groups = groups || [];
+        this.levels = levels;
         
         const container = document.getElementById('field-render-area');
         container.innerHTML = '';
         
-        // Render all groups
-        this.groups.forEach((grp, gIdx) => {
-            const grpDiv = document.createElement('div');
-            grpDiv.className = 'field-group';
-            
-            if(grp.title) {
-                grpDiv.innerHTML += `<div class="group-title">${grp.title}</div>`;
-            }
-
-            grp.levels.forEach((lvl, lIdx) => {
-                const row = document.createElement('div');
-                row.className = 'control-row';
-                row.innerHTML = `
-                    <label class="b24-label">${lvl.name}</label>
-                    <div class="input-group">
-                        <select id="sel-${gIdx}-${lIdx}" class="b24-select" disabled><option>Загрузка...</option></select>
-                        <a id="link-${gIdx}-${lIdx}" class="btn-link" target="_blank" title="Открыть в списке">🔗</a>
-                    </div>
-                `;
-                grpDiv.appendChild(row);
-            });
-            container.appendChild(grpDiv);
-        });
-
-        // Add Listeners
-        this.groups.forEach((grp, gIdx) => {
-            grp.levels.forEach((lvl, lIdx) => {
-                 document.getElementById(`sel-${gIdx}-${lIdx}`).onchange = () => this.onChange(gIdx, lIdx);
-            });
+        this.levels.forEach((lvl, idx) => {
+            const row = document.createElement('div');
+            row.className = 'control-row';
+            row.innerHTML = `
+                <div class="b24-label">${lvl.name}</div>
+                <div class="input-group">
+                    <select id="sel-${idx}" class="b24-select" disabled><option>Загрузка...</option></select>
+                    <a id="link-${idx}" class="btn-link" target="_blank" title="Открыть">🔗</a>
+                </div>
+            `;
+            container.appendChild(row);
+            document.getElementById(`sel-${idx}`).onchange = () => this.onChange(idx);
         });
 
         if (this.entityId === 0) {
-            document.getElementById('field-msg').innerText = "Сохраните сделку для работы с данными";
-            // Preload 1st level just for viewing
-            this.groups.forEach((_, idx) => this.loadLevel(idx, 0, null));
+            document.getElementById('field-msg').innerText = "Сохраните сделку";
+            this.loadLevel(0, null);
             return;
         }
 
@@ -333,40 +374,27 @@ const FieldLogic = {
         BX24.callMethod('crm.deal.get', { ID: this.entityId }, res => {
             if(!res.data()) return;
             const data = res.data();
-            
-            // Map saved values
-            this.groups.forEach(grp => {
-                grp.levels.forEach(lvl => {
-                    lvl.val = data[lvl.crmField];
-                });
-            });
-
-            // Start loading each group
-            this.groups.forEach((_, gIdx) => {
-                this.loadLevel(gIdx, 0, null);
-            });
+            this.levels.forEach(lvl => { lvl.val = data[lvl.crmField]; });
+            this.loadLevel(0, null);
         });
     },
 
-    loadLevel: function(gIdx, lIdx, parentVal) {
-        const grp = this.groups[gIdx];
-        if(lIdx >= grp.levels.length) return;
-
-        const lvl = grp.levels[lIdx];
-        const el = document.getElementById(`sel-${gIdx}-${lIdx}`);
+    loadLevel: function(idx, parentVal) {
+        if(idx >= this.levels.length) return;
+        const lvl = this.levels[idx];
+        const el = document.getElementById(`sel-${idx}`);
         
-        // Reset children
-        for(let i = lIdx; i < grp.levels.length; i++) {
-            const n = document.getElementById(`sel-${gIdx}-${i}`);
-            n.innerHTML = '<option value="">' + (i === lIdx ? 'Загрузка...' : '...') + '</option>';
+        for(let i = idx; i < this.levels.length; i++) {
+            const n = document.getElementById(`sel-${i}`);
+            n.innerHTML = '<option value="">' + (i === idx ? 'Загрузка...' : '...') + '</option>';
             n.disabled = true;
-            document.getElementById(`link-${gIdx}-${i}`).style.display = 'none';
+            document.getElementById(`link-${i}`).style.display = 'none';
         }
 
         const filter = {};
-        if (lIdx > 0) {
+        if (idx > 0) {
             if (!parentVal) {
-                el.innerHTML = '<option value="">Выберите значение выше</option>';
+                el.innerHTML = '<option value="">Выберите выше</option>';
                 return;
             }
             filter[lvl.linkProp] = parentVal;
@@ -386,29 +414,27 @@ const FieldLogic = {
             }
             el.disabled = false;
 
-            // Restore Value
             if (lvl.val) {
                 const exists = [...el.options].some(o => o.value == lvl.val);
                 if (exists) {
                     el.value = lvl.val;
-                    this.updateLink(gIdx, lIdx, lvl.val);
-                    this.loadLevel(gIdx, lIdx + 1, lvl.val);
+                    this.updateLink(idx, lvl.val);
+                    this.loadLevel(idx + 1, lvl.val);
                 } else {
                     lvl.val = null;
                 }
             }
             
-            // Resize frame
+            // Авто-высота
             const h = document.body.scrollHeight;
             BX24.placement.call('resizeWindow', { width: '100%', height: h + 20 });
         });
     },
 
-    onChange: function(gIdx, lIdx) {
-        const val = document.getElementById(`sel-${gIdx}-${lIdx}`).value;
-        const lvl = this.groups[gIdx].levels[lIdx];
-        
-        this.updateLink(gIdx, lIdx, val);
+    onChange: function(idx) {
+        const val = document.getElementById(`sel-${idx}`).value;
+        const lvl = this.levels[idx];
+        this.updateLink(idx, val);
         
         if (this.entityId > 0) {
             BX24.callMethod('crm.deal.update', {
@@ -417,14 +443,14 @@ const FieldLogic = {
             });
         }
 
-        if (lIdx + 1 < this.groups[gIdx].levels.length) {
-            this.loadLevel(gIdx, lIdx + 1, val);
+        if (idx + 1 < this.levels.length) {
+            this.loadLevel(idx + 1, val);
         }
     },
 
-    updateLink: function(gIdx, lIdx, recId) {
-        const link = document.getElementById(`link-${gIdx}-${lIdx}`);
-        const listId = this.groups[gIdx].levels[lIdx].listId;
+    updateLink: function(idx, recId) {
+        const link = document.getElementById(`link-${idx}`);
+        const listId = this.levels[idx].listId;
         if(recId && App.domain) {
             link.href = `https://${App.domain}/company/lists/${listId}/element/0/${recId}/`;
             link.style.display = 'flex';
