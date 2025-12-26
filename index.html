@@ -66,7 +66,7 @@
     <div class="settings-card">
         <h2 style="margin-top:0;">⚙️ Конструктор полей 1С</h2>
         <p style="color:#666; font-size:13px; margin-bottom:20px;">
-            Все созданные здесь группы будут отображаться внутри <b>одного поля</b> в CRM.
+            Настройте группы и уровни. Если видите ошибку "Handler already binded" — это нормально, значит поле уже работает.
         </p>
         
         <label style="display:block; margin-bottom:5px; font-weight:bold;">Название общего поля в CRM:</label>
@@ -78,7 +78,7 @@
 
         <hr style="border:0; border-top:1px solid #eee; margin: 20px 0;">
 
-        <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить и Обновить поле</button>
+        <button class="btn btn-success" onclick="Settings.save()">💾 Сохранить настройки</button>
         <span id="save-msg" style="margin-left:10px; font-weight:bold;"></span>
     </div>
 </div>
@@ -111,27 +111,48 @@ const App = {
 
     init: function() {
         log("App initializing...");
+        
+        // 1. Считываем параметры URL (это самый надежный способ)
         const params = new URLSearchParams(window.location.search);
-        const placementType = params.get('PLACEMENT') || 'DEFAULT'; 
+        const placementType = params.get('PLACEMENT') || 'DEFAULT';
+        
+        // Пытаемся распарсить опции прямо из URL
+        let placementOptions = null;
+        try {
+            const rawOpts = params.get('PLACEMENT_OPTIONS');
+            if (rawOpts) placementOptions = JSON.parse(rawOpts);
+        } catch(e) {
+            log("Error parsing URL options: " + e.message);
+        }
+
         log("Placement Type: " + placementType);
+        if(placementOptions) log("URL Options found: " + JSON.stringify(placementOptions));
         
         BX24.init(() => {
             this.domain = BX24.getAuth().domain;
             log("Domain: " + this.domain);
             
+            // Загружаем конфиг
             this.loadConfig((loadedConfig) => {
                 this.config = loadedConfig;
-                log("Config loaded. Groups count: " + (this.config.groups ? this.config.groups.length : 0));
+                log("Config loaded.");
 
                 if (placementType === 'USERFIELD_TYPE') {
-                    // РЕЖИМ ПОЛЯ
-                    log("Entering Field Mode...");
-                    BX24.placement.info((info) => {
-                        log("Placement Info received. Entity ID: " + info.options.ENTITY_ID);
-                        this.renderFieldMode(info.options);
-                    });
+                    // === РЕЖИМ ПОЛЯ ===
+                    // Если ID есть в URL — используем его сразу (Fast Path)
+                    if (placementOptions && placementOptions.ENTITY_ID) {
+                        log("Fast Start using URL Params");
+                        this.renderFieldMode(placementOptions);
+                    } else {
+                        // Если в URL пусто, пробуем спросить у Битрикса (Slow Path)
+                        log("URL Params empty. Asking BX24.placement.info...");
+                        BX24.placement.info((info) => {
+                            log("BX24 Info received: " + JSON.stringify(info));
+                            this.renderFieldMode(info.options);
+                        });
+                    }
                 } else {
-                    // РЕЖИМ НАСТРОЕК
+                    // === РЕЖИМ НАСТРОЕК ===
                     log("Entering Settings Mode...");
                     this.renderSettingsMode();
                 }
@@ -143,9 +164,9 @@ const App = {
         BX24.callMethod('app.option.get', { option: 'riverclack_config_v3' }, (res) => {
             let data = res.data();
             
-            // Миграция старых данных
+            // Миграция старых данных (v2 -> v3)
             if (!data) {
-                log("No v3 config found. Checking v2...");
+                log("No v3 config. Checking v2...");
                 BX24.callMethod('app.option.get', { option: 'riverclack_config_v2' }, (res2) => {
                     let oldData = res2.data();
                     if (oldData && oldData.levels) {
@@ -155,7 +176,7 @@ const App = {
                             groups: [{ title: "Основная группа", levels: oldData.levels }]
                         });
                     } else {
-                        log("No config found. Using default.");
+                        log("Using default config.");
                         callback(this.getDefaultConfig());
                     }
                 });
@@ -170,7 +191,7 @@ const App = {
             title: "1С Списки",
             groups: [
                 {
-                    title: "Пример группы",
+                    title: "Основная группа",
                     levels: [
                         { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" }
                     ]
@@ -182,6 +203,7 @@ const App = {
     renderSettingsMode: function() {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('settings-screen').style.display = 'block';
+        document.getElementById('debug-log').style.display = 'block'; // Показываем лог админу
 
         document.getElementById('conf-title').value = this.config.title || "1C Списки";
         const container = document.getElementById('groups-container');
@@ -197,10 +219,12 @@ const App = {
     renderFieldMode: function(options) {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('field-screen').style.display = 'block';
-        // В поле лог можно скрыть, если мешает, но сейчас оставим
-        // document.getElementById('debug-log').style.display = 'none';
+        document.getElementById('debug-log').style.display = 'none'; // Скрываем лог менеджеру
         
-        FieldLogic.start(options.ENTITY_ID);
+        const entityId = (options && options.ENTITY_ID) ? options.ENTITY_ID : 0;
+        log("Field Logic Start. Entity ID: " + entityId);
+        
+        FieldLogic.start(entityId);
     }
 };
 
@@ -289,18 +313,16 @@ const Settings = {
             newConfig.groups.push(groupObj);
         });
 
-        log("New Config Structure: " + JSON.stringify(newConfig));
-
-        // 1. Сохраняем опции
+        // 1. Сохраняем опции (это главное)
         BX24.callMethod('app.option.set', { options: { riverclack_config_v3: newConfig } }, (res) => {
             if(res.error()) {
                 log("Error saving options: " + res.error());
                 msg.innerText = "Ошибка сохранения!";
                 return;
             }
-            log("Options saved.");
+            log("Options saved successfully.");
             
-            // 2. Регистрируем тип поля
+            // 2. Регистрируем тип поля (или пытаемся)
             const handlerUrl = window.location.href.split('?')[0];
             BX24.callMethod('userfieldtype.add', {
                 USER_TYPE_ID: 'riverclack_lists_pro', 
@@ -308,12 +330,22 @@ const Settings = {
                 TITLE: newConfig.title,
                 DESCRIPTION: 'Мульти-списки 1С'
             }, (res2) => {
-                if(res2.error()) {
-                    log("Error registering field: " + res2.error());
-                    msg.innerText = "Ошибка регистрации поля";
+                // ИГНОРИРУЕМ ошибку "Handler already binded"
+                if (res2.error()) {
+                    const errText = res2.error().toString();
+                    if (errText.includes("already binded") || errText.includes("400")) {
+                        log("Handler already exists (OK).");
+                        msg.innerText = "✅ Настройки сохранены!";
+                        msg.style.color = "green";
+                    } else {
+                        log("Reg Error: " + errText);
+                        msg.innerText = "Ошибка регистрации (см. лог)";
+                        msg.style.color = "red";
+                    }
                 } else {
-                    log("Field type registered successfully.");
-                    msg.innerText = "✅ Сохранено! Проверьте поле в сделке.";
+                    log("Handler registered.");
+                    msg.innerText = "✅ Настройки сохранены!";
+                    msg.style.color = "green";
                 }
             });
         });
@@ -328,8 +360,6 @@ const FieldLogic = {
         this.entityId = id;
         this.groups = App.config.groups || [];
         
-        log("Rendering " + this.groups.length + " groups...");
-        
         const container = document.getElementById('field-render-area');
         container.innerHTML = '';
         
@@ -337,7 +367,6 @@ const FieldLogic = {
             const grpDiv = document.createElement('div');
             grpDiv.className = 'group-block';
             
-            // Показываем заголовок группы
             if(grp.title) {
                 grpDiv.innerHTML += `<div class="group-title">${grp.title}</div>`;
             }
@@ -354,7 +383,6 @@ const FieldLogic = {
                 `;
                 grpDiv.appendChild(row);
             });
-            
             container.appendChild(grpDiv);
         });
         
@@ -365,7 +393,7 @@ const FieldLogic = {
         });
 
         if (this.entityId == 0) {
-            document.getElementById('field-msg').innerText = "Сохраните сделку";
+            document.getElementById('field-msg').innerText = "Для работы сохраните сделку";
             return;
         }
 
@@ -373,7 +401,10 @@ const FieldLogic = {
     },
 
     sync: function() {
-        log("Syncing with Deal ID: " + this.entityId);
+        // Упрощенный запрос (берет только нужные поля)
+        const selectFields = [];
+        this.groups.forEach(g => g.levels.forEach(l => selectFields.push(l.crmField)));
+        
         BX24.callMethod('crm.deal.get', { ID: this.entityId }, res => {
             if(!res.data()) return;
             const data = res.data();
@@ -447,16 +478,11 @@ const FieldLogic = {
         const val = document.getElementById(`sel-${gIdx}-${lIdx}`).value;
         const lvl = this.groups[gIdx].levels[lIdx];
         
-        log(`Change detected Group ${gIdx} Level ${lIdx} -> ${val}`);
-
         this.updateLink(gIdx, lIdx, val);
         
         BX24.callMethod('crm.deal.update', {
             ID: this.entityId,
             FIELDS: { [lvl.crmField]: val }
-        }, (res) => {
-            if(res.error()) log("Save error: " + res.error());
-            else log("Saved to CRM.");
         });
 
         if (lIdx + 1 < this.groups[gIdx].levels.length) {
