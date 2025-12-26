@@ -8,7 +8,7 @@
     <style>
         body { margin: 0; padding: 0; background: #fff; font-family: "Open Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
-        /* === ЭКРАН ПОЛЯ (МЕНЕДЖЕР) === */
+        /* === ЭКРАН ПОЛЯ === */
         #field-screen { background: transparent; overflow: hidden; padding: 0; display: none; }
         .control-row { margin-bottom: 8px; }
         .b24-label { font-size: 11px; color: #80868e; font-weight: 600; text-transform: uppercase; margin-bottom: 2px; }
@@ -19,7 +19,6 @@
         }
         .b24-select:focus { border-color: #2fc6f6; }
         .b24-select:disabled { background: #f4f4f4; color: #aaa; }
-        
         .btn-link {
             display: none; align-items: center; justify-content: center;
             width: 34px; height: 34px; border: 1px solid #c6cdd3; border-radius: 2px;
@@ -27,7 +26,7 @@
         }
         .btn-link:hover { background: #f0f2f5; color: #2fc6f6; }
 
-        /* === ЭКРАН НАСТРОЕК (АДМИН) === */
+        /* === ЭКРАН НАСТРОЕК === */
         #settings-screen { max-width: 900px; margin: 0 auto; padding: 20px; display: none; }
         .settings-card { background: #fff; border: 1px solid #edeef0; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); padding: 30px; }
         
@@ -56,14 +55,13 @@
             border-top: 5px solid #444; word-break: break-all; display: none;
         }
         
-        /* Инфо о режиме в поле */
         #field-debug-info { font-size: 9px; color: #ccc; margin-bottom: 5px; text-align: right; display:none; }
     </style>
 </head>
 <body>
 
 <div id="loader-screen" style="text-align:center; padding: 20px; color: #888;">
-    <h3>Загрузка приложения...</h3>
+    <h3>Загрузка...</h3>
 </div>
 
 <div id="settings-screen">
@@ -84,7 +82,6 @@
 </div>
 
 <script>
-// --- ЛОГИРОВАНИЕ ---
 function log(msg) {
     console.log(msg);
     const el = document.getElementById('debug-log');
@@ -99,8 +96,10 @@ function saveLog(msg, color='black') {
 }
 function fieldDebug(msg) {
     const el = document.getElementById('field-debug-info');
-    el.style.display = 'block';
-    el.innerText = msg;
+    if(el) {
+        el.style.display = 'block';
+        el.innerText = msg;
+    }
 }
 
 window.onerror = function(message, source, lineno, colno, error) {
@@ -114,14 +113,10 @@ const App = {
 
     init: function() {
         const params = new URLSearchParams(window.location.search);
-        // Битрикс всегда добавляет PLACEMENT=USERFIELD_TYPE, когда рендерит поле
         const placement = params.get('PLACEMENT');
         const isFieldMode = (placement === 'USERFIELD_TYPE');
-        
-        // Получаем код конфигурации (который мы сами зашили при регистрации)
         this.currentCode = params.get('config_code'); 
         
-        // Быстрый парсинг опций встройки
         let placementOptions = null;
         try {
             const rawOpts = params.get('PLACEMENT_OPTIONS');
@@ -135,21 +130,16 @@ const App = {
                 this.config = loadedConfig;
 
                 if (isFieldMode) {
-                    // === РЕЖИМ ПОЛЯ ===
-                    // Показываем диагностику
-                    fieldDebug(`Code: ${this.currentCode || 'MISSING'} | Entity: ${placementOptions?.ENTITY_ID || '?'}`);
+                    fieldDebug(`Code: ${this.currentCode || 'AUTO'} | Entity: ${placementOptions?.ENTITY_ID || '?'}`);
 
                     if (placementOptions && placementOptions.ENTITY_ID) {
-                        // Быстрый старт (данные из URL)
                         this.renderFieldMode(placementOptions.ENTITY_ID);
                     } else {
-                        // Медленный старт (запрос к Битрикс)
                         BX24.placement.info((info) => {
                             this.renderFieldMode(info.options.ENTITY_ID);
                         });
                     }
                 } else {
-                    // === РЕЖИМ НАСТРОЕК ===
                     this.renderSettingsMode();
                 }
             });
@@ -160,7 +150,6 @@ const App = {
         BX24.callMethod('app.option.get', { option: 'riverclack_config_v4' }, (res) => {
             let data = res.data();
             
-            // Если нет конфига v4, но есть v3, делаем тихую миграцию
             if (!data) {
                 BX24.callMethod('app.option.get', { option: 'riverclack_config_v3' }, (res2) => {
                     let v3 = res2.data();
@@ -169,16 +158,15 @@ const App = {
                     if (v3 && v3.groups) {
                         v3.groups.forEach((grp, idx) => {
                             newConfig.configs.push({
-                                code: "field_" + idx, // генерируем временный код
+                                code: "field_" + idx, 
                                 title: v3.title + " - " + grp.title,
                                 levels: grp.levels
                             });
                         });
                     } else {
-                        // Дефолт
                         newConfig.configs.push({
                             code: "main_list",
-                            title: "Договоры (Пример)",
+                            title: "Основной список",
                             levels: [
                                 { name: "Договор", listId: "55", linkProp: "", crmField: "UF_CRM_1766155842" }
                             ]
@@ -207,24 +195,21 @@ const App = {
         document.getElementById('loader-screen').style.display = 'none';
         document.getElementById('field-screen').style.display = 'block';
         
-        // 1. Ищем нужный конфиг по коду
         let myConfig = null;
+        
+        // 1. Пытаемся найти по коду
         if (this.currentCode) {
             myConfig = this.config.configs.find(c => c.code === this.currentCode);
         }
         
-        // 2. Если конфиг не найден, мы НЕ гадаем, а пишем ошибку
-        // Это важно, чтобы вы видели, что URL битый
+        // 2. АВАРИЙНЫЙ РЕЖИМ (Фолбэк): Если код не передан, берем ПЕРВУЮ настройку
+        if (!myConfig && this.config.configs.length > 0) {
+            myConfig = this.config.configs[0];
+            fieldDebug("Config code missing. Using default: " + myConfig.title);
+        }
+        
         if (!myConfig) {
-            const msg = document.getElementById('field-msg');
-            msg.style.display = 'block';
-            msg.style.color = 'red';
-            msg.innerHTML = `
-                <b>Ошибка конфигурации</b><br>
-                Приложение не знает, какое поле показывать.<br>
-                Код в URL: ${this.currentCode || 'Отсутствует'}<br>
-                <small>Попробуйте зайти в настройки приложения и пересохранить конфигурацию.</small>
-            `;
+            document.getElementById('field-msg').innerText = "Ошибка: Нет конфигурации. Зайдите в настройки приложения.";
             return;
         }
 
@@ -238,7 +223,6 @@ const Settings = {
         const div = document.createElement('div');
         div.className = 'field-config-block';
         
-        // Если кода нет, генерируем его и СОХРАНЯЕМ в атрибуте
         if (!data.code) data.code = "fld_" + Math.floor(Math.random() * 100000);
 
         div.innerHTML = `
@@ -308,20 +292,16 @@ const Settings = {
             newConfig.configs.push(cfg);
         });
 
-        // 1. Сохраняем в базу
         BX24.callMethod('app.option.set', { options: { riverclack_config_v4: newConfig } }, (res) => {
             if(res.error()) {
-                saveLog("Ошибка сохранения: " + res.error(), "red");
+                saveLog("Ошибка: " + res.error(), "red");
                 return;
             }
             saveLog("Конфигурация сохранена.", "green");
             
-            // 2. Регистрируем обработчики (ЗДЕСЬ МАГИЯ С URL)
-            // Мы убираем параметры из текущего URL, чтобы получить чистый путь
-            const baseUrl = window.location.protocol + '//' + window.location.host + window.location.pathname;
+            const baseUrl = window.location.href.split('?')[0];
 
             newConfig.configs.forEach(cfg => {
-                // В URL добавляем config_code. Битрикс запомнит этот URL для этого типа поля.
                 const handlerUrl = baseUrl + "?config_code=" + cfg.code;
                 const userTypeId = 'riverclack_' + cfg.code; 
 
@@ -333,8 +313,11 @@ const Settings = {
                 }, (res2) => {
                     if (res2.error()) {
                          const err = res2.error().toString();
-                         if(err.includes("binded")) saveLog(`Поле "${cfg.title}" обновлено.`, "green");
-                         else saveLog(`Ошибка регистрации "${cfg.title}": ${err}`, "red");
+                         if(err.includes("binded") || err.includes("400")) {
+                             saveLog(`Поле "${cfg.title}" обновлено.`, "green");
+                         } else {
+                             saveLog(`Ошибка "${cfg.title}": ${err}`, "red");
+                         }
                     } else {
                         saveLog(`Поле "${cfg.title}" зарегистрировано!`, "blue");
                     }
@@ -349,7 +332,7 @@ const FieldLogic = {
     levels: [],
 
     start: function(id, levels) {
-        this.entityId = parseInt(id); // Приводим к числу
+        this.entityId = parseInt(id) || 0;
         this.levels = levels;
         
         const container = document.getElementById('field-render-area');
@@ -369,10 +352,9 @@ const FieldLogic = {
             document.getElementById(`sel-${idx}`).onchange = () => this.onChange(idx);
         });
 
-        // Если ID сделки 0, мы всё равно рисуем поля, но они пустые
         if (this.entityId === 0) {
-            document.getElementById('field-msg').innerText = "Сохраните сделку, чтобы данные сохранялись.";
-            // Но загрузить первый уровень можно!
+            document.getElementById('field-msg').innerText = "Сохраните сделку";
+            // Грузим первый уровень для красоты
             this.loadLevel(0, null);
             return;
         }
